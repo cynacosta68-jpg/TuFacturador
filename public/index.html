@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arcanum — Gateway ARCA</title>
+<title>Facturador Masivo</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2327408b'/%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z'/%3E%3Crect x='21' y='39' width='22' height='6' rx='1' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -94,6 +94,15 @@
   pre{background:#1c1a17;color:#f0ebe1;padding:12px;border-radius:10px;overflow:auto;font-family:var(--mono);font-size:11.5px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;place-items:center;z-index:20;padding:20px}
   .modal.open{display:grid}.modal .card{max-width:620px;width:100%;max-height:85vh;overflow:auto}
+  .hero{background:linear-gradient(180deg,var(--panel),var(--bg));border:1px solid var(--line);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow);margin-bottom:16px}
+  .hero h2{font-size:22px;margin:0 0 8px;text-transform:none;letter-spacing:-.2px;color:var(--ink)}
+  .hero p{color:var(--muted);margin:0 0 14px;max-width:62ch}
+  .pill-row{display:flex;gap:8px;flex-wrap:wrap}
+  .stat .val[data-count]{font-variant-numeric:tabular-nums}
+  .reveal{animation:fadeUp .5s cubic-bezier(.22,1,.36,1) both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
+  .bars .b{transition:height .7s cubic-bezier(.22,1,.36,1)}
+  @media(prefers-reduced-motion:reduce){.reveal{animation:none}.bars .b{transition:none}}
 </style>
 </head>
 <body>
@@ -101,8 +110,8 @@
 <div id="loginView" class="login hidden">
   <div class="card">
     <div class="logo" style="margin:0 auto 14px;width:44px;height:44px;border-radius:12px"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div>
-    <h1 style="margin:0 0 4px">Arcanum</h1>
-    <p class="hint" style="margin:0 0 18px">Gateway ARCA — Escriba Suite</p>
+    <h1 style="margin:0 0 4px">Facturador Masivo</h1>
+    <p class="hint" style="margin:0 0 18px">Bienvenido al portal de Emisiones Masivas en ARCA</p>
     <label style="text-align:left">Usuario</label><input id="lu" autocomplete="username">
     <label style="text-align:left">Contraseña</label>
     <div class="pwwrap"><input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
@@ -113,7 +122,7 @@
 
 <div id="appView" class="hidden">
 <header><div class="wrap bar">
-  <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div><h1>Arcanum</h1>
+  <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div><h1>Facturador Masivo</h1>
   <nav id="nav"></nav>
   <div class="right" style="position:relative"><span id="who"></span>
     <button class="iconbtn" id="menuBtn" onclick="toggleMenu()" aria-label="Menú"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
@@ -138,6 +147,7 @@ async function api(path,opts={}){
   return j;
 }
 function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast show'+(bad?' bad':'');setTimeout(()=>t.className='toast',2600);}
+function animateCounts(){document.querySelectorAll('[data-count]').forEach(el=>{const target=+el.getAttribute('data-count'),dur=850,t0=performance.now();function step(t){const p=Math.min(1,(t-t0)/dur);el.textContent=Math.round((1-Math.pow(1-p,3))*target);if(p<1)requestAnimationFrame(step);else el.textContent=target;}requestAnimationFrame(step);});}
 function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.add('open');}
 function closeModal(){$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
@@ -168,6 +178,7 @@ async function boot(){
 }
 
 /* ---------- PANEL ---------- */
+/* ---------- PANEL ---------- */
 async function vPanel(){
   const v=$('#view');v.innerHTML='<p class="hint">Cargando métricas…</p>';
   const {metricas:m}=await api('/api/metrics');
@@ -175,17 +186,24 @@ async function vPanel(){
   const bars=m.emisiones.serie.map(s=>`<div class="b" title="${s.dia}: ${s.n}" style="height:${Math.round(s.n/max*100)}%"></div>`).join('')||'<span class="hint">sin emisiones aún</span>';
   const arca=m.arca.map(a=>`<tr><td>${a.servicio}</td><td><span class="dot ${a.ok?'ok':'bad'}"></span>${a.ok?'OK':'caído'}</td><td class="mono">${a.uptime24h??'—'}%</td><td class="mono">${a.latencia??'—'} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">El monitor corre cada 5 min; esperá el primer chequeo.</td></tr>';
   v.innerHTML=`
+   <div class="hero reveal">
+     <h2>Bienvenido al portal de Emisiones Masivas en ARCA</h2>
+     <p>Emití comprobantes electrónicos en nombre de cada profesional, en lote, directo a ARCA. El sistema controla los vencimientos y te muestra el estado de los servicios en vivo.</p>
+     <div class="pill-row">
+       <span class="tag"><span class="dot ${m.arca.some(a=>a.ok)?'ok':'bad'}"></span>ARCA · ${ENV}</span>
+       <span class="tag">${ME.username} (${ME.role})</span>
+     </div>
+   </div>
    <div class="grid">
-     <div class="card stat"><div class="label">Emisiones hoy</div><div class="val">${m.emisiones.hoy}</div></div>
-     <div class="card stat"><div class="label">Monto hoy</div><div class="val" style="font-size:20px">$${m.emisiones.montoHoy.toLocaleString('es-AR')}</div></div>
-     <div class="card stat"><div class="label">Tokens vigentes</div><div class="val">${m.tokensVigentes}</div></div>
-     <div class="card stat"><div class="label">Certs por vencer</div><div class="val">${m.certificados.porVencer}</div></div>
-     <div class="card stat"><div class="label">Peticiones 24h</div><div class="val">${m.peticiones24h.total}</div><div class="hint">${m.peticiones24h.errores} errores · ${m.peticiones24h.latenciaMedia}ms</div></div>
+     <div class="card stat reveal"><div class="label">Emisiones hoy</div><div class="val" data-count="${m.emisiones.hoy}">0</div></div>
+     <div class="card stat reveal"><div class="label">Monto hoy</div><div class="val" style="font-size:20px">$${m.emisiones.montoHoy.toLocaleString('es-AR')}</div></div>
+     <div class="card stat reveal"><div class="label">Certs por vencer</div><div class="val" data-count="${m.certificados.porVencer}">0</div></div>
+     <div class="card stat reveal"><div class="label">Peticiones 24h</div><div class="val" data-count="${m.peticiones24h.total}">0</div><div class="hint">${m.peticiones24h.errores} errores · ${m.peticiones24h.latenciaMedia}ms</div></div>
    </div>
    <h2>Emisiones (14 días)</h2><div class="card"><div class="bars">${bars}</div></div>
    <h2>Estado de ARCA</h2><div class="card"><table><thead><tr><th>Servicio</th><th>Estado</th><th>Uptime 24h</th><th>Latencia</th></tr></thead><tbody>${arca}</tbody></table></div>`;
+  animateCounts();
 }
-
 /* ---------- CLIENTES ---------- */
 async function vClientes(){
   const v=$('#view');
@@ -488,7 +506,7 @@ async function renderMenu(){
   const dark=document.documentElement.getAttribute('data-theme')==='dark';
   $('#appmenu').innerHTML=`
    <div class="menu-sec"><div class="menu-h">Acerca de</div>
-     <div class="menu-row"><span>Arcanum</span><span class="mono">v${cfg.version}</span></div>
+     <div class="menu-row"><span>Facturador Masivo</span><span class="mono">v${cfg.version}</span></div>
      <div class="menu-row"><span>Usuario</span><span class="mono">${ME.username}</span></div>
      <div class="menu-row"><span>Entorno</span><span class="tag ${cfg.entorno==='prod'?'warn':''}">${String(cfg.entorno).toUpperCase()}</span></div>
    </div>
