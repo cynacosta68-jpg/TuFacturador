@@ -212,7 +212,7 @@ async function vClientes(){
   const {tenants}=await api('/api/tenants');
 
   // Empty state: sin certificados -> acceso directo guiado
-  if(!tenants.some(t=>t.tieneCertificado)){
+  if(!tenants.length){
     v.innerHTML=`
      <div class="hero reveal" style="text-align:center">
        <div class="logo" style="margin:0 auto 14px;width:46px;height:46px;border-radius:12px"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div>
@@ -235,7 +235,8 @@ async function vClientes(){
        ${t.tieneClave?`<button class="ghost" onclick="verCsr('${t.cuit}')">CSR</button>`:''}
        <button class="ghost" onclick="pegarCert('${t.cuit}')">Pegar .crt</button>
       </td></tr>`;}).join('');
-  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Clientes</h2>
+  const faltaCrt=tenants.some(t=>t.tieneClave&&!t.tieneCertificado);
+  v.innerHTML=`${faltaCrt?`<div class="card reveal" style="border:1px solid var(--warn);margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div><strong>Falta pegar el certificado.</strong> <span class="hint">Descargaste el .crt de ARCA: usá "Pegar .crt" en la fila de tu CUIT.</span></div></div>`:''}<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Clientes</h2>
     <span class="tag" style="margin-left:2px">${tenants.length} cargados · ${conCert} con certificado</span>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
     <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
