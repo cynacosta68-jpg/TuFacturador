@@ -182,6 +182,7 @@ async function boot(){
 async function vPanel(){
   const v=$('#view');v.innerHTML='<p class="hint">Cargando métricas…</p>';
   const {metricas:m}=await api('/api/metrics');
+  let sinCert=false;try{const r=await api('/api/tenants');sinCert=!r.tenants.some(t=>t.tieneCertificado);}catch{}
   const max=Math.max(1,...m.emisiones.serie.map(s=>s.n));
   const bars=m.emisiones.serie.map(s=>`<div class="b" title="${s.dia}: ${s.n}" style="height:${Math.round(s.n/max*100)}%"></div>`).join('')||'<span class="hint">sin emisiones aún</span>';
   const arca=m.arca.map(a=>`<tr><td>${a.servicio}</td><td><span class="dot ${a.ok?'ok':'bad'}"></span>${a.ok?'OK':'caído'}</td><td class="mono">${a.uptime24h??'—'}%</td><td class="mono">${a.latencia??'—'} ms</td></tr>`).join('')||'<tr><td colspan="4" class="hint">El monitor corre cada 5 min; esperá el primer chequeo.</td></tr>';
@@ -194,6 +195,7 @@ async function vPanel(){
        <span class="tag">${ME.username} (${ME.role})</span>
      </div>
    </div>
+   ${sinCert?`<div class="card reveal" style="border:1px solid var(--accent);display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px"><div><strong>Todavía no cargaste ningún certificado.</strong> <span class="hint">Es lo primero para poder emitir en ARCA.</span></div><button class="primary" style="margin-left:auto" onclick="go('clientes')">Cargar mi certificado</button></div>`:''}
    <div class="grid">
      <div class="card stat reveal"><div class="label">Emisiones hoy</div><div class="val" data-count="${m.emisiones.hoy}">0</div></div>
      <div class="card stat reveal"><div class="label">Monto hoy</div><div class="val" style="font-size:20px">$${m.emisiones.montoHoy.toLocaleString('es-AR')}</div></div>
@@ -206,19 +208,38 @@ async function vPanel(){
 }
 /* ---------- CLIENTES ---------- */
 async function vClientes(){
-  const v=$('#view');
+  const v=$('#view'); v.innerHTML='<p class="hint">Cargando…</p>';
   const {tenants}=await api('/api/tenants');
+
+  // Empty state: sin certificados -> acceso directo guiado
+  if(!tenants.some(t=>t.tieneCertificado)){
+    v.innerHTML=`
+     <div class="hero reveal" style="text-align:center">
+       <div class="logo" style="margin:0 auto 14px;width:46px;height:46px;border-radius:12px"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div>
+       <h2 style="margin:0 0 8px">Cargá tu primer certificado</h2>
+       <p style="margin:0 auto 18px;max-width:56ch">Para emitir en ARCA necesitás un certificado digital. Generamos el pedido (CSR), lo subís a ARCA, y pegás el certificado que te devuelven. Toma un par de minutos.</p>
+       <div class="row" style="justify-content:center">
+         <button class="primary" onclick="nuevoCliente()">Cargar mi certificado</button>
+         <button onclick="importarCert()">Ya tengo uno (importar)</button>
+       </div>
+     </div>`;
+    return;
+  }
+
+  // Lista de clientes / representados
+  const conCert=tenants.filter(t=>t.tieneCertificado).length;
   const rows=tenants.map(t=>{
     const cert=t.tieneCertificado?`<span class="tag ok">vigente${t.diasParaVencer!=null?' ('+t.diasParaVencer+'d)':''}</span>`:(t.tieneClave?'<span class="tag warn">falta certificado</span>':'<span class="tag no">sin clave</span>');
-    return `<tr><td class="mono">${t.cuit}</td><td>${t.nombre||''}</td><td>${cert}</td>
-      <td class="row">
+    return `<tr><td class="mono" style="padding-left:16px">${t.cuit}</td><td>${t.nombre||''}</td><td>${cert}</td>
+      <td class="row" style="padding-right:16px">
        ${t.tieneClave?`<button class="ghost" onclick="verCsr('${t.cuit}')">CSR</button>`:''}
        <button class="ghost" onclick="pegarCert('${t.cuit}')">Pegar .crt</button>
-      </td></tr>`;}).join('')||'<tr><td colspan="4" class="hint">No hay clientes. Creá el primero.</td></tr>';
-  v.innerHTML=`<div class="row"><h2 style="margin:0">Clientes (${ENV})</h2>
+      </td></tr>`;}).join('');
+  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Clientes</h2>
+    <span class="tag" style="margin-left:2px">${tenants.length} cargados · ${conCert} con certificado</span>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
     <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
-    <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Nombre</th><th>Certificado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr><th style="padding-left:16px">CUIT</th><th>Nombre</th><th>Certificado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="hint" style="margin-top:10px">Flujo: <strong>Nuevo cliente</strong> genera el CSR → lo subís a ARCA → descargás el .crt → <strong>Pegar .crt</strong>.</p>`;
 }
 function nuevoCliente(){modal(`<h3>Nuevo cliente</h3><label>CUIT</label><input id="ncuit" class="mono" placeholder="20111111112">
