@@ -1,0 +1,26 @@
+{
+  "30718673611": {
+    "razonSocial": "KLA SERVICIOS SRL",
+    "domicilio": "Huapi N° 828 - Comodoro Rivadavia, Chubut",
+    "condicionIva": "Responsable Inscripto",
+    "ingresosBrutos": "",
+    "inicioActividades": "",
+    "mipyme": true
+  },
+  "20352086038": {
+    "razonSocial": "AVALOS SEBASTIAN",
+    "domicilio": "Bouchardo N° 1626 - Comodoro Rivadavia, Chubut",
+    "condicionIva": "Responsable Inscripto",
+    "ingresosBrutos": "",
+    "inicioActividades": "",
+    "mipyme": true
+  },
+  "23371513094": {
+    "razonSocial": "ACOSTA CYNTHIA OFELIA",
+    "domicilio": "España N° 670 - Comodoro Rivadavia, Chubut",
+    "condicionIva": "Responsable Monotributo",
+    "ingresosBrutos": "Exento",
+    "inicioActividades": "",
+    "mipyme": false
+  }
+}

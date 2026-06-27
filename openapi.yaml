@@ -1,0 +1,337 @@
+openapi: 3.0.3
+info:
+  title: Arcanum — Gateway REST para ARCA (ex-AFIP)
+  version: 0.2.0
+  description: >
+    API REST self-hosted que envuelve los Web Services SOAP de ARCA. Firma WSAA
+    100% local, token cacheado, multi-cliente y multi-entorno. Pensada para n8n.
+  license:
+    name: Apache-2.0
+servers:
+  - url: http://localhost:8094
+    description: Instancia local
+security:
+  - ApiKeyAuth: []
+tags:
+  - name: Auth
+  - name: Config
+  - name: Clientes
+  - name: Servicios
+  - name: WSFEv1
+  - name: Padron
+  - name: e-Ventanilla
+  - name: Comprobantes
+  - name: Webhooks
+  - name: Usuarios
+  - name: Metricas
+components:
+  securitySchemes:
+    ApiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
+  schemas:
+    AlicuotaIva:
+      type: object
+      properties:
+        id: { type: integer, example: 5, description: "3=27%,4=10.5%,5=21%,6=5%,8=2.5%,9=0%" }
+        baseImponible: { type: number, example: 100 }
+        importe: { type: number, example: 21 }
+    ComprobanteAsociado:
+      type: object
+      properties:
+        tipo: { type: integer }
+        puntoVenta: { type: integer }
+        numero: { type: integer }
+        cuit: { type: string }
+        fecha: { type: string }
+    Comprobante:
+      type: object
+      required: [cuit, puntoVenta, tipoComprobante, importeTotal]
+      properties:
+        cuit: { type: string, example: "20111111112" }
+        puntoVenta: { type: integer, example: 1 }
+        tipoComprobante: { type: integer, example: 11, description: "1=A,6=B,11=C,3/8/13=NC,2/7/12=ND" }
+        concepto: { type: integer, example: 1, description: "1=Productos,2=Servicios,3=Ambos" }
+        tipoDocReceptor: { type: integer, example: 99 }
+        nroDocReceptor: { type: string, example: "0" }
+        numero: { type: integer, nullable: true, description: "Si se omite, ultimo autorizado + 1" }
+        fecha: { type: string, example: "2026-06-24" }
+        importeNeto: { type: number }
+        importeIva: { type: number }
+        importeTotal: { type: number }
+        importeNoGravado: { type: number }
+        importeExento: { type: number }
+        importeTributos: { type: number }
+        moneda: { type: string, example: "PES" }
+        cotizacion: { type: number, example: 1 }
+        idempotencyKey: { type: string, description: "Evita doble CAE en reintentos" }
+        alicuotasIva: { type: array, items: { $ref: '#/components/schemas/AlicuotaIva' } }
+        comprobantesAsociados: { type: array, items: { $ref: '#/components/schemas/ComprobanteAsociado' } }
+        fechaServicioDesde: { type: string, nullable: true }
+        fechaServicioHasta: { type: string, nullable: true }
+        fechaVtoPago: { type: string, nullable: true }
+paths:
+  /api/health:
+    get: { tags: [Metricas], summary: Estado del servicio (sin auth), security: [], responses: { '200': { description: OK } } }
+  /metrics:
+    get: { tags: [Metricas], summary: Metricas en formato Prometheus (sin auth), security: [], responses: { '200': { description: texto Prometheus } } }
+  /api/metrics:
+    get: { tags: [Metricas], summary: Metricas (JSON), responses: { '200': { description: resumen } } }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login de la UI (devuelve cookie de sesion)
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string } } } } } }
+      responses: { '200': { description: ok }, '401': { description: credenciales invalidas }, '429': { description: demasiados intentos } }
+  /api/auth/logout:
+    post: { tags: [Auth], summary: Cierra la sesion, security: [], responses: { '200': { description: ok } } }
+  /api/auth/me:
+    get: { tags: [Auth], summary: Usuario autenticado, responses: { '200': { description: ok } } }
+  /api/auth/config:
+    get: { tags: [Auth], summary: Indica si OIDC esta habilitado, security: [], responses: { '200': { description: ok } } }
+  /api/auth/oidc/login:
+    get: { tags: [Auth], summary: Inicia el login OIDC (redirect), security: [], responses: { '302': { description: redirect al issuer } } }
+  /api/auth/oidc/callback:
+    get: { tags: [Auth], summary: Callback OIDC (verifica id_token), security: [], responses: { '302': { description: redirect a / } } }
+
+  /api/config:
+    get: { tags: [Config], summary: Entorno activo y version, responses: { '200': { description: ok } } }
+  /api/config/entorno:
+    post:
+      tags: [Config]
+      summary: Cambia el entorno (homo/prod). Rol admin+. Persistido.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { entorno: { type: string, enum: [homo, prod] } } } } } }
+      responses: { '200': { description: ok }, '403': { description: rol insuficiente } }
+
+  /api/tenants:
+    get: { tags: [Clientes], summary: Lista de CUITs con metadata del certificado, responses: { '200': { description: ok } } }
+    post:
+      tags: [Clientes]
+      summary: Alta de cliente — genera clave y CSR (rol operador+)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { cuit: { type: string }, nombre: { type: string } } } } } }
+      responses: { '200': { description: devuelve el CSR } }
+  /api/tenants/{cuit}/csr:
+    get:
+      tags: [Clientes]
+      summary: Descarga el CSR generado
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: PEM del CSR } }
+  /api/tenants/{cuit}/certificate:
+    post:
+      tags: [Clientes]
+      summary: Carga el .crt que devolvio ARCA (valida que case con la clave)
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { certPem: { type: string } } } } } }
+      responses: { '200': { description: ok }, '422': { description: el cert no corresponde a la clave } }
+  /api/tenants/{cuit}/importar:
+    post:
+      tags: [Clientes]
+      summary: Importa un par clave+certificado existente
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { nombre: { type: string }, keyPem: { type: string }, certPem: { type: string } } } } } }
+      responses: { '200': { description: ok } }
+  /api/tenants/{cuit}:
+    delete:
+      tags: [Clientes]
+      summary: Elimina un cliente (rol operador+)
+      parameters: [ { name: cuit, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: ok } }
+
+  /api/services:
+    get: { tags: [Servicios], summary: Catalogo de servicios de ARCA, responses: { '200': { description: ok } } }
+    post: { tags: [Servicios], summary: Agrega un servicio al catalogo (rol admin+), responses: { '200': { description: ok } } }
+  /api/services/{id}:
+    get:
+      tags: [Servicios]
+      summary: Detalle de un servicio
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: ok } }
+    put:
+      tags: [Servicios]
+      summary: Edita un servicio (rol admin+)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: ok } }
+    delete:
+      tags: [Servicios]
+      summary: Borra / restaura un servicio (rol admin+)
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: ok } }
+  /api/services/{id}/operaciones:
+    get:
+      tags: [Servicios]
+      summary: Introspeccion del WSDL — lista operaciones y campos
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: ok } }
+  /api/services/{id}/verificar:
+    get:
+      tags: [Servicios]
+      summary: Verifica si el certificado del CUIT esta asociado a este servicio
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: "{ asociado: bool, motivo? }" } }
+  /api/services/{id}/reset:
+    post: { tags: [Servicios], summary: Restaura un builtin al default (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: ok } } }
+  /api/services/{id}/enabled:
+    post: { tags: [Servicios], summary: Habilita/deshabilita un servicio (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: ok } } }
+
+  /api/ws/{servicio}/{operacion}:
+    post:
+      tags: [Servicios]
+      summary: Passthrough generico — invoca cualquier operacion de cualquier servicio
+      parameters:
+        - { name: servicio, in: path, required: true, schema: { type: string } }
+        - { name: operacion, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { cuit: { type: string }, params: { type: object } } } } } }
+      responses: { '200': { description: respuesta de ARCA parseada } }
+
+  /api/wsfev1/status:
+    get: { tags: [WSFEv1], summary: Estado de WSFEv1 (FEDummy), responses: { '200': { description: ok } } }
+  /api/wsfev1/parametros/{nombre}:
+    get:
+      tags: [WSFEv1]
+      summary: Tablas de parametros (catalogos)
+      parameters:
+        - { name: nombre, in: path, required: true, schema: { type: string, enum: [tiposComprobante, tiposDocumento, tiposConcepto, alicuotasIva, monedas, tiposTributo, puntosVenta] } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: ok } }
+  /api/wsfev1/ultimo-autorizado:
+    get:
+      tags: [WSFEv1]
+      summary: Ultimo numero autorizado
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
+        - { name: tipoComprobante, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+  /api/wsfev1/consultar:
+    get:
+      tags: [WSFEv1]
+      summary: Consulta / reimprime un comprobante
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: puntoVenta, in: query, required: true, schema: { type: integer } }
+        - { name: tipoComprobante, in: query, required: true, schema: { type: integer } }
+        - { name: numero, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: ok } }
+  /api/wsfev1/comprobantes:
+    post:
+      tags: [WSFEv1]
+      summary: Emitir comprobante y obtener CAE
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Comprobante' } } } }
+      responses: { '200': { description: aprobado }, '422': { description: rechazado } }
+  /api/wsfev1/lote:
+    post:
+      tags: [WSFEv1]
+      summary: Emision por lote (JSON {comprobantes:[...]} o CSV)
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, properties: { comprobantes: { type: array, items: { $ref: '#/components/schemas/Comprobante' } } } } }
+          text/csv: { schema: { type: string } }
+      responses: { '200': { description: "{ total, aprobados, rechazados, resultados[] }" } }
+
+  /api/padron/{alcance}/{cuit}:
+    get:
+      tags: [Padron]
+      summary: Consulta de padron (a13=Mi Categoria, a5=Constancia)
+      parameters:
+        - { name: alcance, in: path, required: true, schema: { type: string, enum: [a13, a5] } }
+        - { name: cuit, in: path, required: true, schema: { type: string, description: CUIT a consultar } }
+        - { name: cuit, in: query, required: true, schema: { type: string, description: CUIT representante (cert cargado) } }
+      responses: { '200': { description: datos del contribuyente } }
+
+  /api/eventanilla/status:
+    get: { tags: [e-Ventanilla], summary: Estado (dummy), responses: { '200': { description: ok } } }
+  /api/eventanilla/comunicaciones:
+    get:
+      tags: [e-Ventanilla]
+      summary: Lista comunicaciones (ventana max 31 dias)
+      parameters:
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: desde, in: query, schema: { type: string, example: "2026-05-25" } }
+        - { name: hasta, in: query, schema: { type: string } }
+        - { name: pagina, in: query, schema: { type: integer } }
+        - { name: porPagina, in: query, schema: { type: integer } }
+      responses: { '200': { description: lista con tieneAdjunto } }
+  /api/eventanilla/comunicacion/{id}:
+    get:
+      tags: [e-Ventanilla]
+      summary: Cuerpo del mensaje de una comunicacion
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: ok } }
+  /api/eventanilla/comunicacion/{id}/adjuntos:
+    get:
+      tags: [e-Ventanilla]
+      summary: Metadata de los PDF adjuntos
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: "{ total, adjuntos[] }" } }
+  /api/eventanilla/comunicacion/{id}/adjunto:
+    get:
+      tags: [e-Ventanilla]
+      summary: Descarga un PDF adjunto (binario)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: cuit, in: query, required: true, schema: { type: string } }
+        - { name: n, in: query, schema: { type: integer, default: 0 } }
+      responses: { '200': { description: PDF, content: { application/pdf: {} } } }
+
+  /api/comprobantes:
+    get:
+      tags: [Comprobantes]
+      summary: Lista de comprobantes emitidos
+      parameters:
+        - { name: cuit, in: query, schema: { type: string } }
+        - { name: desde, in: query, schema: { type: string } }
+        - { name: hasta, in: query, schema: { type: string } }
+      responses: { '200': { description: ok } }
+  /api/comprobantes/export.csv:
+    get: { tags: [Comprobantes], summary: Export CSV (Libro IVA), responses: { '200': { description: csv } } }
+  /api/comprobantes/{cuit}/{pv}/{tipo}/{nro}/pdf:
+    get:
+      tags: [Comprobantes]
+      summary: PDF del comprobante con QR de ARCA
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: pv, in: path, required: true, schema: { type: integer } }
+        - { name: tipo, in: path, required: true, schema: { type: integer } }
+        - { name: nro, in: path, required: true, schema: { type: integer } }
+      responses: { '200': { description: PDF, content: { application/pdf: {} } } }
+
+  /api/usuarios:
+    get: { tags: [Usuarios], summary: Lista de usuarios (admin+), responses: { '200': { description: ok } } }
+    post:
+      tags: [Usuarios]
+      summary: Crea un usuario (superadmin)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string }, role: { type: string, enum: [superadmin, admin, operador, lectura] }, cuitAllow: { type: array, items: { type: string } } } } } } }
+      responses: { '200': { description: ok } }
+
+  /api/webhooks:
+    get: { tags: [Webhooks], summary: Lista webhooks (admin+), responses: { '200': { description: ok } } }
+    post:
+      tags: [Webhooks]
+      summary: Crea un webhook (admin+)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { url: { type: string }, eventos: { type: array, items: { type: string } }, secret: { type: string } } } } } }
+      responses: { '200': { description: ok } }
+  /api/webhooks/{id}:
+    delete: { tags: [Webhooks], summary: Borra un webhook (admin+), parameters: [ { name: id, in: path, required: true, schema: { type: integer } } ], responses: { '200': { description: ok } } }
+
+  /api/wsaa/{cuit}/{service}:
+    get:
+      tags: [Servicios]
+      summary: Inspecciona el Ticket de Acceso (diagnostico)
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: service, in: path, required: true, schema: { type: string, example: wsfe } }
+      responses: { '200': { description: ok } }
+    delete:
+      tags: [Servicios]
+      summary: Invalida el Ticket de Acceso cacheado
+      parameters:
+        - { name: cuit, in: path, required: true, schema: { type: string } }
+        - { name: service, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: ok } }

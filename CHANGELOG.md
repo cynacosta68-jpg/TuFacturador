@@ -1,0 +1,64 @@
+# Changelog
+
+Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
+Versionado semantico.
+
+## [0.2.0] - 2026-06-24
+
+### Agregado
+- **e-Ventanilla** (modulo rico SOAP 1.2 + MTOM): listar/leer comunicaciones y descargar PDF adjuntos.
+- **Switch de entorno homo/prod desde la UI** (admin), en caliente y persistido.
+- **Importar par clave+certificado** existente desde la UI/API.
+- **Verificar asociacion** del certificado por servicio (boton en la UI + `/api/services/:id/verificar`).
+- **Emision por lote** (JSON o CSV): `POST /api/wsfev1/lote`.
+- **Notificaciones por email** (SMTP) ademas de webhooks.
+- **OIDC**: verificacion de la firma del id_token contra el JWKS.
+- Menu hamburguesa (Acerca de + tema + entorno), ojitos en contrasenas, generador con presets de e-Ventanilla/padron A5.
+- OpenAPI completo, ESLint, SECURITY.md, CONTRIBUTING.md, imagen base pinneada por digest, mas tests.
+
+### Cambiado
+- Token WSAA: sin renovacion proactiva (evita el rechazo "ya posee un TA valido" y el baneo); renovacion lazy + fallback al TA cacheado.
+- Quitados padron A4/A10 (endpoints no verificados) con poda automatica.
+- Timeout SOAP a 15s para errores rapidos.
+
+## [0.1.0] - 2026-06-24
+
+### Agregado
+
+- Autenticacion WSAA con firma CMS/PKCS#7 **100% local** (node-forge). La clave
+  privada nunca sale del contenedor ni pasa por terceros.
+- Cache de Ticket de Acceso (Token + Sign) por CUIT + servicio, con lock para
+  evitar logins concurrentes y respeto del `expirationTime` real.
+- Multi-tenant por archivos: `data/certs/<CUIT>.crt` + `<CUIT>.key`.
+- WSFEv1 (Factura Electronica nacional):
+  - `POST /api/wsfev1/comprobantes` — emitir y obtener CAE (auto-numeracion).
+  - `GET /api/wsfev1/ultimo-autorizado` — ultimo numero autorizado.
+  - `GET /api/wsfev1/parametros/{nombre}` — catalogos (tipos, alicuotas, etc).
+  - `GET /api/wsfev1/status` — FEDummy.
+- Padron / Constancia: `GET /api/padron/{a13|a5}/{cuit}`.
+- Diagnostico WSAA: `GET`/`DELETE /api/wsaa/{cuit}/{service}`.
+- Auth por `X-API-Key` (se autogenera si no se define).
+- OpenAPI 3.0 + pagina `/docs` (Redoc) para integrar con n8n.
+- Docker + docker-compose, imagen sin root con healthcheck.
+
+- Postgres con esquema completo, claves privadas cifradas (AES-256-GCM).
+- Catalogo de 16 servicios editable en vivo por superadmin (motor generico +
+  modulos ricos). Namespaces/endpoints verificados contra los WSDL reales.
+- Ciclo de vida del certificado (genera CSR, carga el .crt con validacion).
+- Auto-recuperacion de token + daemon (monitor, renovacion, alertas de vencimiento).
+- Log de peticiones, idempotencia (anti doble-CAE), validacion previa de importes.
+- NC/ND con comprobantes asociados, consulta/reimpresion, PDF con QR de ARCA,
+  export CSV, webhooks firmados HMAC, metricas + endpoint Prometheus.
+- Panel web completo (login con roles + API key + OIDC/Lockatus opcional).
+
+### Verificado
+
+- Motor generico contra ARCA homologacion real: wsfev1, wsfexv1, wsbfev1, wscdc
+  y wsmtxca devuelven OK por sus dummy. Resto de servicios Java con namespace y
+  auth correctos (su dummy requiere auth, asi que no se monitorean).
+
+### Pendiente (roadmap)
+
+- Verificacion del camino con firma usando un certificado de homologacion real.
+- Promover WSFEX/MTXCA/agro de generico a modulos "ricos" con validaciones finas.
+- Lotes (varios comprobantes por request) y CAEA.
