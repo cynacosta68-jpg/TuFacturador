@@ -400,7 +400,7 @@ function importarLote(input){
       data.forEach(r=>{
         const g=String(r.ComprobanteGlobal||'').trim(); if(!g) return;
         if(!map[g]) map[g]={global:g,obraSocial:r.ObraSocial||'',cuitOS:String(r.CuitObraSocial||''),presentacion:String(r.Presentacion||''),rows:[]};
-        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',delegacion:String(r.Delegacion||'SI').toUpperCase().trim(),email:String(r.Email||'').trim(),tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
+        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
           exento:+r.Exento||0,gravado:+r.Gravado||0,iva:+r.IVA||0,total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
       });
       LOTE=Object.values(map); LOTE_SEL=null;
@@ -425,10 +425,8 @@ function vEmitirDetalle(v){
       :r.estado==='err'?`<span class="tag no" title="${(r.err||'').replace(/"/g,'')}">rechazada</span>`:`<span class="tag warn">pendiente</span>`;
     let acc='';
     if(r.estado==='ok'||r.estado==='recibida') acc='';
-    else if(r.delegacion==='NO') acc = r.estado==='solicitada'
-        ? `<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`
-        : `<button onclick="solicitarFactura(${j})">Solicitar factura</button>`;
-    else acc=`<button class="primary" onclick="previewEmision(${j})">Emitir y obtener CAE</button>`;
+    else if(r.estado==='solicitada') acc=`<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`;
+    else acc=`<span style="display:inline-flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"><button class="primary" onclick="previewEmision(${j})">Emitir y obtener CAE</button><button onclick="solicitarFactura(${j})">Solicitar factura</button></span>`;
     return `<tr><td style="padding-left:16px">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
       <td class="num">$ ${_fmt(r.total)}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${acc}</td></tr>`;
