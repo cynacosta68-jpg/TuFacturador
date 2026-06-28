@@ -370,7 +370,7 @@ function vEmitirLista(v){
     return;
   }
   const rows=LOTE.map((g,i)=>{
-    const emit=g.rows.filter(r=>r.estado==='ok').length, tot=g.rows.length, pct=Math.round(100*emit/tot);
+    const emit=g.rows.filter(r=>r.estado==='ok'||r.estado==='recibida').length, tot=g.rows.length, pct=Math.round(100*emit/tot);
     const totalG=g.rows.reduce((a,r)=>a+(+r.total||0),0);
     const per=_perMA(g.rows[0]&&(g.rows[0].pHasta||g.rows[0].pDesde));
     return `<tr ondblclick="abrirGlobal(${i})">
@@ -386,7 +386,7 @@ function vEmitirLista(v){
     <button style="margin-left:auto" onclick="$('#fileLote').click()">Reimportar</button>
     <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>
    <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr>
-     <th style="padding-left:16px">Comprobante global</th><th>Obra social</th><th>Período</th><th class="num">Total</th><th>Avance</th><th>Emitidas</th><th style="padding-right:16px"></th>
+     <th style="padding-left:16px">Comprobante global</th><th>Obra social</th><th>Período</th><th class="num">Total</th><th>Avance</th><th>Facturadas</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>
    <p class="hint" style="margin-top:10px">Doble clic en una fila también abre el detalle. En homologación las emisiones salen con tu CUIT.</p>`;
 }
@@ -435,12 +435,12 @@ function vEmitirDetalle(v){
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
       <td class="num">$ ${_fmt(r.total)}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${acc}</td></tr>`;
   }).join('');
-  const emit=g.rows.filter(r=>r.estado==='ok').length;
+  const emit=g.rows.filter(r=>r.estado==='ok'||r.estado==='recibida').length;
   const pendientes=g.rows.filter(esPend).length;
   v.innerHTML=`<div class="row"><button onclick="volverLote()">← Volver</button>
      <span class="mono" style="margin-left:6px">${g.global}</span> · <strong>${g.obraSocial}</strong>
      <span class="hint">· presentación ${g.presentacion}</span>
-     <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} emitidas</span></div>
+     <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} facturadas</span></div>
    <div class="card reveal" style="margin-top:10px"><strong>Receptor:</strong> ${g.obraSocial} · CUIT <span class="mono">${g.cuitOS}</span>${per?` &nbsp;·&nbsp; <strong>Período:</strong> <span class="mono">${per}</span>`:''}<span class="hint"> — se precarga en cada emisión.</span></div>
    <div class="row" style="margin-top:10px"><span class="hint">Tildá los profesionales a los que quieras pedirles la factura y enviá las solicitudes en lote.</span>
      <button id="btnSel" class="primary" style="margin-left:auto" disabled onclick="solicitarSeleccionados()">Solicitar a seleccionados (0)</button></div>
