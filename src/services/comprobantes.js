@@ -47,20 +47,38 @@ function csvEscape(v) {
 async function exportCsv(filters) {
   const rows = await list({ ...filters, limit: 5000 });
   // [etiqueta visible, clave]
-  const cols = [
+  const pyme = filters && filters.perfil === 'pyme';
+  const cols = pyme ? [
     ['cuit', 'cuit'],
     ['N° Comprobante', 'nro_comprobante'],
     ['tipo_cbte', 'tipo_cbte'],
+    ['Receptor', 'receptor_nombre'],
+    ['CUIT / Doc receptor', 'doc_nro'],
     ['Tipo de prestaciones', 'tipo_prestaciones'],
     ['cae', 'cae'],
     ['cae_vto', 'cae_vto'],
     ['fecha', 'fecha'],
     ['importe_total', 'importe_total'],
+  ] : [
+    ['cuit', 'cuit'],
+    ['N° Comprobante', 'nro_comprobante'],
+    ['tipo_cbte', 'tipo_cbte'],
+    ['Comprobante asociado', 'comprobante_asociado'],
+    ['cae', 'cae'],
+    ['cae_vto', 'cae_vto'],
+    ['fecha', 'fecha'],
+    ['importe_total', 'importe_total'],
+    ['doc_tipo', 'doc_tipo'],
+    ['doc_nro', 'doc_nro'],
+    ['resultado', 'resultado'],
   ];
   const lines = [cols.map((c) => c[0]).join(';')];
   for (const r of rows) {
+    const global = (r.meta && r.meta.receptor && r.meta.receptor.global) || '';
     const conc = (r.meta && r.meta.concepto) || null;
     const val = (key) => {
+      if (key === 'comprobante_asociado') return global;
+      if (key === 'receptor_nombre') return (r.meta && r.meta.receptor && r.meta.receptor.nombre) || '';
       if (key === 'nro_comprobante') return String(r.punto_venta).padStart(5, '0') + '-' + String(r.numero).padStart(8, '0');
       if (key === 'tipo_prestaciones') return conc === 1 ? 'Bienes' : conc === 2 ? 'Servicios' : conc === 3 ? 'Ambas' : '';
       const v = r[key];
