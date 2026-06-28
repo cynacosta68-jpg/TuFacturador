@@ -403,7 +403,8 @@ function vEmitirLista(v){
     const totalG=g.rows.reduce((a,r)=>a+(+r.total||0),0);
     const per=_perMA(g.rows[0]&&(g.rows[0].pHasta||g.rows[0].pDesde));
     return `<tr ondblclick="abrirGlobal(${i})">
-      <td class="mono" style="padding-left:16px">${g.global}</td><td>${g.obraSocial}</td>
+      <td style="padding-left:16px;text-align:center"><input type="checkbox" class="selglob" data-i="${i}" onclick="event.stopPropagation()" onchange="actualizarSelGlob()"></td>
+      <td class="mono">${g.global}</td><td>${g.obraSocial}</td>
       <td class="mono">${per||'—'}</td>
       <td class="num">$ ${_fmt(totalG)}</td>
       <td><div class="progw"><span class="progp">${pct}%</span><div class="prog"><i style="width:${pct}%"></i></div></div></td>
@@ -412,10 +413,13 @@ function vEmitirLista(v){
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Detalle de facturación a emitir</h2>
     <span class="tag" style="margin-left:2px">Emisor (homologación): ${EMISOR_CUIT}</span>
-    <button style="margin-left:auto" onclick="$('#fileLote').click()">Reimportar</button>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button id="btnDelGlob" class="ghost" style="display:none" onclick="eliminarGlobsSeleccionados()">Eliminar selección</button>
+      <button onclick="$('#fileLote').click()">Importar lote (.xlsx)</button>
+    </div>
     <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>
    <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr>
-     <th style="padding-left:16px">Comprobante global</th><th>Obra social</th><th>Período</th><th class="num">Total</th><th>Avance</th><th>Facturadas</th><th style="padding-right:16px"></th>
+     <th style="padding-left:16px;width:34px;text-align:center"><input type="checkbox" id="selAllGlob" onchange="toggleSelAllGlob(this)"></th><th>Comprobante global</th><th>Obra social</th><th>Período</th><th class="num">Total</th><th>Avance</th><th>Facturadas</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>
    <p class="hint" style="margin-top:10px">Doble clic en una fila también abre el detalle. En homologación las emisiones salen con tu CUIT.</p>`;
 }
@@ -434,11 +438,45 @@ function importarLote(input){
         map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
           exento:+r.Exento||0,gravado:+r.Gravado||0,iva:+r.IVA||0,total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
       });
-      LOTE=Object.values(map); LOTE_SEL=null;
-      toast('Lote importado: '+LOTE.length+' comprobantes globales'); vEmitir();
+      const nuevos=Object.values(map);
+      let added=0, merged=0;
+      nuevos.forEach(ng=>{ const ex=LOTE.find(g=>g.global===ng.global); if(ex){ ex.rows.push(...ng.rows); merged+=ng.rows.length; } else { LOTE.push(ng); added++; } });
+      LOTE_SEL=null; input.value='';
+      toast('Importado: '+added+' globales nuevos'+(merged?(' · '+merged+' filas sumadas a globales existentes'):'')); vEmitir();
     }catch(err){ toast('No pude leer el Excel: '+err.message,true); }
   };
   rd.readAsArrayBuffer(file);
+}
+
+let DELGLOB=[], DELROWS=[];
+function actualizarSelGlob(){
+  const n=document.querySelectorAll('.selglob:checked').length;
+  const b=$('#btnDelGlob'); if(b){ b.style.display=n?'inline-flex':'none'; b.textContent='Eliminar selección ('+n+')'; }
+  const all=$('#selAllGlob'), tot=document.querySelectorAll('.selglob').length;
+  if(all) all.checked = n>0 && n===tot;
+}
+function toggleSelAllGlob(cb){ document.querySelectorAll('.selglob').forEach(c=>c.checked=cb.checked); actualizarSelGlob(); }
+function eliminarGlobsSeleccionados(){
+  DELGLOB=[...document.querySelectorAll('.selglob:checked')].map(c=>+c.dataset.i);
+  if(!DELGLOB.length) return;
+  modal(`<h3>Eliminar comprobantes globales</h3><p>Vas a eliminar <b>${DELGLOB.length}</b> comprobante(s) global(es) del lote. Esta acción no se puede deshacer.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" style="background:#c0392b;border-color:#c0392b" onclick="confirmarEliminarGlobs()">Eliminar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+function confirmarEliminarGlobs(){
+  const s=new Set(DELGLOB);
+  LOTE=LOTE.filter((_,i)=>!s.has(i));
+  closeModal(); vEmitir(); toast('Eliminado del lote: '+s.size+' global(es)');
+}
+function eliminarFilasSeleccionadas(){
+  DELROWS=[...document.querySelectorAll('.selrow:checked')].map(c=>+c.dataset.j);
+  if(!DELROWS.length) return;
+  modal(`<h3>Eliminar filas</h3><p>Vas a eliminar <b>${DELROWS.length}</b> profesional(es) de este comprobante global. No se puede deshacer.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" style="background:#c0392b;border-color:#c0392b" onclick="confirmarEliminarFilas()">Eliminar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+function confirmarEliminarFilas(){
+  const s=new Set(DELROWS), g=LOTE[LOTE_SEL];
+  g.rows=g.rows.filter((_,j)=>!s.has(j));
+  closeModal(); vEmitir(); toast('Filas eliminadas: '+s.size);
 }
 
 function abrirGlobal(i){ LOTE_SEL=i; vEmitir(); window.scrollTo({top:0,behavior:'smooth'}); }
@@ -472,8 +510,11 @@ function vEmitirDetalle(v){
      <span class="hint">· presentación ${g.presentacion}</span>
      <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} facturadas</span></div>
    <div class="card reveal" style="margin-top:10px"><strong>Receptor:</strong> ${g.obraSocial} · CUIT <span class="mono">${g.cuitOS}</span>${per?` &nbsp;·&nbsp; <strong>Período:</strong> <span class="mono">${per}</span>`:''}<span class="hint"> — se precarga en cada emisión.</span></div>
-   <div class="row" style="margin-top:10px"><span class="hint">Tildá los profesionales a los que quieras pedirles la factura y enviá las solicitudes en lote.</span>
-     <button id="btnSel" class="primary" style="margin-left:auto" disabled onclick="solicitarSeleccionados()">Solicitar a seleccionados (0)</button></div>
+   <div class="row" style="margin-top:10px"><span class="hint">Tildá profesionales para pedirles la factura en lote, o para eliminar filas mal importadas.</span>
+     <div style="margin-left:auto;display:flex;gap:8px">
+       <button id="btnDelRow" class="ghost" style="display:none" onclick="eliminarFilasSeleccionadas()">Eliminar selección</button>
+       <button id="btnSel" class="primary" disabled onclick="solicitarSeleccionados()">Solicitar a seleccionados (0)</button>
+     </div></div>
    <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table><thead><tr>
      <th style="padding-left:16px;width:34px;text-align:center">${pendientes?`<input type="checkbox" id="selAll" onchange="toggleSelAll(this)">`:''}</th><th style="white-space:nowrap">Profesional</th><th>Mat.</th><th>Resp.</th><th class="num">Exento</th><th class="num">Gravado</th><th class="num">IVA</th><th class="num">Total</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -620,6 +661,7 @@ async function guardarRecibida(j){
 function actualizarSel(){
   const n=document.querySelectorAll('.selrow:checked').length;
   const b=$('#btnSel'); if(b){ b.disabled=!n; b.textContent='Solicitar a seleccionados ('+n+')'; }
+  const d=$('#btnDelRow'); if(d){ d.style.display=n?'inline-flex':'none'; d.textContent='Eliminar selección ('+n+')'; }
 }
 function toggleSelAll(cb){ document.querySelectorAll('.selrow').forEach(c=>c.checked=cb.checked); actualizarSel(); }
 
