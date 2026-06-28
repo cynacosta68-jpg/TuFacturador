@@ -46,10 +46,30 @@ function csvEscape(v) {
 
 async function exportCsv(filters) {
   const rows = await list({ ...filters, limit: 5000 });
-  const headers = ['cuit', 'punto_venta', 'tipo_cbte', 'numero', 'cae', 'cae_vto', 'fecha', 'importe_total', 'doc_tipo', 'doc_nro', 'resultado'];
-  const lines = [headers.join(';')];
+  // [etiqueta visible, clave]
+  const cols = [
+    ['cuit', 'cuit'],
+    ['punto_venta', 'punto_venta'],
+    ['tipo_cbte', 'tipo_cbte'],
+    ['numero', 'numero'],
+    ['Comprobante asociado', 'comprobante_asociado'],
+    ['cae', 'cae'],
+    ['cae_vto', 'cae_vto'],
+    ['fecha', 'fecha'],
+    ['importe_total', 'importe_total'],
+    ['doc_tipo', 'doc_tipo'],
+    ['doc_nro', 'doc_nro'],
+    ['resultado', 'resultado'],
+  ];
+  const lines = [cols.map((c) => c[0]).join(';')];
   for (const r of rows) {
-    lines.push(headers.map((h) => csvEscape(r[h] instanceof Date ? r[h].toISOString().slice(0, 10) : r[h])).join(';'));
+    const global = (r.meta && r.meta.receptor && r.meta.receptor.global) || '';
+    const val = (key) => {
+      if (key === 'comprobante_asociado') return global;
+      const v = r[key];
+      return v instanceof Date ? v.toISOString().slice(0, 10) : v;
+    };
+    lines.push(cols.map((c) => csvEscape(val(c[1]))).join(';'));
   }
   return lines.join('\n');
 }
