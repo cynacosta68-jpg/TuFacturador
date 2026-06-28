@@ -89,7 +89,7 @@
   .muted{color:var(--muted)} .hint{color:var(--muted);font-size:13px}
   .login{max-width:360px;margin:12vh auto;text-align:center}
   .login .card{padding:28px}
-  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0c0e13;color:#f3f5f9;padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;box-shadow:var(--shadow)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0c0e13;color:#f3f5f9;padding:11px 18px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:80vw;box-shadow:var(--shadow);text-align:center;word-break:break-word;line-height:1.35}
   .toast.show{opacity:1}.toast.bad{background:var(--bad)}
   .hidden{display:none}
   pre{background:#1c1a17;color:#f0ebe1;padding:12px;border-radius:10px;overflow:auto;font-family:var(--mono);font-size:11.5px}
@@ -246,7 +246,7 @@ async function vClientes(){
     <span class="tag" style="margin-left:2px">${tenants.length} cargados · ${conCert} con certificado</span>
     <button style="margin-left:auto" onclick="importarCert()">Importar certificado</button>
     <button class="primary" onclick="nuevoCliente()">Nuevo cliente</button></div>
-    <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr><th style="padding-left:16px">CUIT</th><th>Nombre</th><th>Certificado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr><th style="padding-left:16px">CUIT</th><th>Nombre</th><th>Certificado</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="hint" style="margin-top:10px">Flujo: <strong>Nuevo cliente</strong> genera el CSR → lo subís a ARCA → descargás el .crt → <strong>Pegar .crt</strong>.</p>`;
 }
 function nuevoCliente(){modal(`<h3>Nuevo cliente</h3><label>CUIT</label><input id="ncuit" class="mono" placeholder="20111111112">
@@ -383,7 +383,7 @@ function vEmitirLista(v){
     <span class="tag" style="margin-left:2px">Emisor (homologación): ${EMISOR_CUIT}</span>
     <button style="margin-left:auto" onclick="$('#fileLote').click()">Reimportar</button>
     <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>
-   <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr>
+   <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr>
      <th style="padding-left:16px">Comprobante global</th><th>Obra social</th><th>Período</th><th class="num">Total</th><th>Avance</th><th>Emitidas</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>
    <p class="hint" style="margin-top:10px">Doble clic en una fila también abre el detalle. En homologación las emisiones salen con tu CUIT.</p>`;
@@ -437,7 +437,7 @@ function vEmitirDetalle(v){
      <span class="hint">· presentación ${g.presentacion}</span>
      <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} emitidas</span></div>
    <div class="card reveal" style="margin-top:10px"><strong>Receptor:</strong> ${g.obraSocial} · CUIT <span class="mono">${g.cuitOS}</span>${per?` &nbsp;·&nbsp; <strong>Período:</strong> <span class="mono">${per}</span>`:''}<span class="hint"> — se precarga en cada emisión.</span></div>
-   <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr>
+   <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr>
      <th style="padding-left:16px">Profesional</th><th>Mat.</th><th>Resp.</th><th class="num">Exento</th><th class="num">Gravado</th><th class="num">IVA</th><th class="num">Total</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
