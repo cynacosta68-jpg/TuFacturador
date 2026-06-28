@@ -10,6 +10,7 @@ const crypto = require('crypto');
 
 const { config } = require('./config');
 const { sendJson, sendError, readJsonBody, readTextBody } = require('./lib/http');
+const mailer = require('./services/mailer');
 const db = require('./db');
 const catalog = require('./catalog');
 const engine = require('./soap/engine');
@@ -200,6 +201,19 @@ async function route(req, res, url) {
       [v, principal.username],
     );
     return sendJson(res, 200, { ok: true, entorno: v });
+  }
+
+  // POST /api/solicitudes/email  { to, subject, body }  -> envía la solicitud de factura al profesional
+  if (req.method === 'POST' && url.pathname === '/api/solicitudes/email') {
+    const { to, subject, body } = await readJsonBody(req);
+    if (!to || !/.+@.+\..+/.test(String(to))) return sendJson(res, 400, { ok: false, error: 'Email destino invalido' });
+    if (!mailer.canSend()) return sendJson(res, 200, { ok: true, sent: false, reason: 'SMTP no configurado' });
+    try {
+      await mailer.send(to, subject || 'Solicitud de factura', body || '');
+      return sendJson(res, 200, { ok: true, sent: true });
+    } catch (e) {
+      return sendJson(res, 200, { ok: true, sent: false, reason: e.message });
+    }
   }
 
   // GET /api/tenants  -> CUITs con certificado cargado
