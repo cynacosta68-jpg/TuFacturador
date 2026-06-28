@@ -506,6 +506,7 @@ async function confirmarEmision(j){
     const c=res.comprobante;
     if(!c.aprobado) throw new Error((c.observaciones&&c.observaciones[0]&&c.observaciones[0].message)||(c.errores&&c.errores[0]&&c.errores[0].message)||'Rechazado por ARCA');
     r.estado='ok'; r.cae=c.cae; r.pv=c.puntoVenta; r.num=c.numero;
+    try{ await api('/api/solicitudes/cargar',{method:'POST',body:JSON.stringify({cuit:EMISOR_CUIT,global:g.global,matricula:r.mat,cae:c.cae,nroComprobante:String(c.puntoVenta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0')})}); }catch(_){}
     vEmitir(); toast('CAE obtenido: '+c.cae);
   }catch(e){ r.estado='err'; r.err=e.message; vEmitir(); toast(e.message,true); }
 }
@@ -666,7 +667,7 @@ async function vSeguimiento(){
       <td class="mono">${s.matricula||''}</td><td>${s.obra_social||''}</td><td class="mono">${s.global||''}</td>
       <td class="mono">${(s.fecha_solicitud||'').slice(0,10)}</td>
       <td class="num" style="color:${c};font-weight:600">${d} día${d===1?'':'s'}</td>
-      <td style="white-space:nowrap"><span class="tag" style="background:${c};color:#fff;vertical-align:middle">${txt}</span></td>
+      <td style="white-space:nowrap"><span class="tag" style="background:${c};color:#fff;display:inline-block;white-space:nowrap;vertical-align:middle">${txt}</span></td>
       <td style="padding-right:16px;text-align:right"><button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="reenviarSolicitud(${i})">Reenviar solicitud</button></td>
     </tr>`;
   }).join('');
