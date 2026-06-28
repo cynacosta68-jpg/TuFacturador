@@ -458,6 +458,26 @@ async function route(req, res, url) {
       res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="cbte-${seg[3]}-${seg[5]}.pdf"` });
       return res.end(buf);
     }
+    // POST /api/comprobantes/:cuit/:pv/:tipo/:nro/enviar  { to, subject, body }  -> envía la factura por mail con el PDF adjunto
+    if (req.method === 'POST' && seg[2] && seg[3] && seg[4] && seg[5] && seg[6] === 'enviar') {
+      assertCuitAllowed(principal, seg[2]);
+      const { to, subject, body } = await readJsonBody(req);
+      if (!to || !/.+@.+\..+/.test(String(to))) return sendJson(res, 400, { ok: false, error: 'Email destino invalido' });
+      if (!mailer.canSend()) return sendJson(res, 200, { ok: true, sent: false, reason: 'SMTP no configurado' });
+      const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
+      if (!cmp) throw notFound();
+      const buf = await pdf.generar(cmp);
+      try {
+        await mailer.send(to, subject || 'Factura', body || '', [{ filename: `factura-${seg[3]}-${seg[5]}.pdf`, content: buf }]);
+        await db.query(
+          `UPDATE comprobantes SET enviado_at=now(), enviado_to=$6 WHERE cuit=$1 AND entorno=$2 AND punto_venta=$3 AND tipo_cbte=$4 AND numero=$5`,
+          [String(seg[2]).replace(/\D/g, ''), config.env, seg[3], seg[4], seg[5], to],
+        );
+        return sendJson(res, 200, { ok: true, sent: true });
+      } catch (e) {
+        return sendJson(res, 200, { ok: true, sent: false, reason: e.message });
+      }
+    }
   }
 
   // --- Usuarios (superadmin) ---
