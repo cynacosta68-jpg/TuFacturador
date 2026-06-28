@@ -111,6 +111,7 @@
   .prog>i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .6s cubic-bezier(.22,1,.36,1)}
   .progp{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;background:var(--accent);padding:1px 6px;border-radius:999px;min-width:40px;text-align:center}
   td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .segtbl td{vertical-align:middle}
 </style>
 </head>
 <body>
@@ -665,14 +666,14 @@ async function vSeguimiento(){
       <td class="mono">${s.matricula||''}</td><td>${s.obra_social||''}</td><td class="mono">${s.global||''}</td>
       <td class="mono">${(s.fecha_solicitud||'').slice(0,10)}</td>
       <td class="num" style="color:${c};font-weight:600">${d} día${d===1?'':'s'}</td>
-      <td><span class="tag" style="background:${c};color:#fff">${txt}</span></td>
+      <td style="white-space:nowrap"><span class="tag" style="background:${c};color:#fff;vertical-align:middle">${txt}</span></td>
       <td style="padding-right:16px;text-align:right"><button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="reenviarSolicitud(${i})">Reenviar solicitud</button></td>
     </tr>`;
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Seguimiento de pendientes</h2>
     <span class="tag" style="margin-left:2px">${SOLIC.length} pendientes</span></div>
    <p class="hint" style="margin-top:6px">Antigüedad desde la solicitud — <span style="color:#1e8e3e;font-weight:600">verde &lt; 5 días</span> · <span style="color:#e0a800;font-weight:600">amarillo 5 a 15</span> · <span style="color:#c0392b;font-weight:600">rojo &gt; 15</span>.</p>
-   <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table><thead><tr>
+   <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr>
      <th style="padding-left:16px">Profesional</th><th>Mat.</th><th>Obra social</th><th>Comprobante global</th><th>Fecha solicitud</th><th class="num">Antigüedad</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
