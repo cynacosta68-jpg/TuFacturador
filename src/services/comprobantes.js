@@ -51,21 +51,18 @@ async function exportCsv(filters) {
     ['cuit', 'cuit'],
     ['N° Comprobante', 'nro_comprobante'],
     ['tipo_cbte', 'tipo_cbte'],
-    ['Comprobante asociado', 'comprobante_asociado'],
+    ['Tipo de prestaciones', 'tipo_prestaciones'],
     ['cae', 'cae'],
     ['cae_vto', 'cae_vto'],
     ['fecha', 'fecha'],
     ['importe_total', 'importe_total'],
-    ['doc_tipo', 'doc_tipo'],
-    ['doc_nro', 'doc_nro'],
-    ['resultado', 'resultado'],
   ];
   const lines = [cols.map((c) => c[0]).join(';')];
   for (const r of rows) {
-    const global = (r.meta && r.meta.receptor && r.meta.receptor.global) || '';
+    const conc = (r.meta && r.meta.concepto) || null;
     const val = (key) => {
-      if (key === 'comprobante_asociado') return global;
       if (key === 'nro_comprobante') return String(r.punto_venta).padStart(5, '0') + '-' + String(r.numero).padStart(8, '0');
+      if (key === 'tipo_prestaciones') return conc === 1 ? 'Bienes' : conc === 2 ? 'Servicios' : conc === 3 ? 'Ambas' : '';
       const v = r[key];
       return v instanceof Date ? v.toISOString().slice(0, 10) : v;
     };
