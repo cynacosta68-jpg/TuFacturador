@@ -288,7 +288,7 @@ async function emitir(cuit, inv, { ptoVta, tipoCbte, concepto, idem }) {
          ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
         [cuit, config.env, ptoVta, tipoCbte, numero, out.cae, out.caeVencimiento, resultado, cbteFecha,
          out.importeTotal, out.docTipo, out.docNro, idem, JSON.stringify(out),
-         JSON.stringify({ emisor: inv.emisor || null, receptor: inv.receptor || null, items: inv.items || null, periodo: inv.periodo || null, condicionVenta: inv.condicionVenta || null, importeNeto: inv.importeNeto != null ? Number(inv.importeNeto) : null, importeIva: inv.importeIva != null ? Number(inv.importeIva) : null })],
+         JSON.stringify({ emisor: inv.emisor || null, receptor: inv.receptor || null, concepto: concepto != null ? Number(concepto) : null, items: inv.items || null, periodo: inv.periodo || null, condicionVenta: inv.condicionVenta || null, importeNeto: inv.importeNeto != null ? Number(inv.importeNeto) : null, importeIva: inv.importeIva != null ? Number(inv.importeIva) : null })],
       );
     } catch (e) {
       console.error('[arcanum] no se pudo persistir el comprobante:', e.message);
