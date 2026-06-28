@@ -647,13 +647,33 @@ async function enviarSeleccionados(){
 }
 
 /* ---------- COMPROBANTES ---------- */
+let CBTES=[];
+function nombrePdfCbte(c){
+  const meta=c.meta||{};
+  const prof=(meta.receptor&&meta.receptor.profesional)||(meta.emisor&&meta.emisor.nombre)||c.cuit;
+  const per=meta.periodo?_MMYYYY(meta.periodo.hasta||meta.periodo.desde):'';
+  return _clean(prof)+'_'+String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0')+(per?'_'+per:'')+'.pdf';
+}
+async function descargarCbtePdf(i){
+  const c=CBTES[i];
+  const url=`/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/pdf`;
+  toast('Descargando PDF…');
+  try{
+    const resp=await fetch(url,{credentials:'include'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const blob=await resp.blob();
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombrePdfCbte(c);
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  }catch(e){ toast('No se pudo descargar el PDF',true); }
+}
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
-  const rows=comprobantes.map(c=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
+  CBTES=comprobantes;
+  const rows=comprobantes.map((c,i)=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
-    <td><a href="/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/pdf"><button class="ghost">PDF</button></a></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
+    <td><button class="ghost" onclick="descargarCbtePdf(${i})">PDF</button></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes emitidos</h2><a href="/api/comprobantes/export.csv" style="margin-left:auto"><button>Exportar CSV</button></a></div>
-   <div class="card" style="margin-top:12px"><table><thead><tr><th>CUIT</th><th>Cbte</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+   <div class="card" style="margin-top:12px;overflow-x:auto"><table><thead><tr><th>CUIT</th><th>N° Comprobante</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ---------- WEBHOOKS ---------- */
