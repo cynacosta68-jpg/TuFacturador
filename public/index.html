@@ -397,7 +397,7 @@ function importarLote(input){
       data.forEach(r=>{
         const g=String(r.ComprobanteGlobal||'').trim(); if(!g) return;
         if(!map[g]) map[g]={global:g,obraSocial:r.ObraSocial||'',cuitOS:String(r.CuitObraSocial||''),presentacion:String(r.Presentacion||''),rows:[]};
-        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),
+        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
           total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
       });
       LOTE=Object.values(map); LOTE_SEL=null;
@@ -433,25 +433,36 @@ function vEmitirDetalle(v){
 
 function previewEmision(j){
   const g=LOTE[LOTE_SEL], r=g.rows[j];
+  const hoy=new Date().toISOString().slice(0,10);
+  const pd=r.pDesde||hoy, ph=r.pHasta||hoy;
   modal(`<h3>Vista previa de emisión</h3>
     <div class="f2"><div><label>Emisor (homologación)</label><input class="mono" value="${EMISOR_CUIT}" readonly></div>
-      <div><label>Tipo</label><input value="Factura C" readonly></div></div>
+      <div><label>Fecha de emisión</label><input type="date" id="e_fecha" value="${hoy}"></div></div>
     <label>Receptor (precargado)</label><input value="${g.obraSocial}" readonly>
     <div class="f2"><div><label>CUIT receptor</label><input class="mono" value="${g.cuitOS}" readonly></div>
       <div><label>Total</label><input class="mono" value="$ ${_fmt(r.total)}" readonly></div></div>
-    <p class="hint" style="margin-top:8px">Profesional: ${r.prof} (Mat. ${r.mat}). Comprobante global ${g.global}.</p>
+    <div class="f3"><div><label>Período desde</label><input type="date" id="e_pdesde" value="${pd}"></div>
+      <div><label>Período hasta</label><input type="date" id="e_phasta" value="${ph}"></div>
+      <div><label>Vto. de pago</label><input type="date" id="e_vto" value="${ph}"></div></div>
+    <label>Detalle del concepto</label><textarea id="e_detalle" style="min-height:64px">Prestaciones médicas — ${r.prof} (Mat. ${r.mat})</textarea>
+    <p class="hint" style="margin-top:6px">Concepto: Servicios. Profesional: ${r.prof}. Comprobante global ${g.global}.</p>
     <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarEmision(${j})">Confirmar y obtener CAE</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
 
 async function confirmarEmision(j){
   const g=LOTE[LOTE_SEL], r=g.rows[j];
+  const fecha=$('#e_fecha').value, pd=$('#e_pdesde').value, ph=$('#e_phasta').value, vto=$('#e_vto').value;
+  const detalle=($('#e_detalle').value||'').trim()||('Prestaciones médicas — '+r.prof);
   const docNro=(g.cuitOS||'').replace(/\D/g,'');
   const body={ cuit:EMISOR_CUIT, puntoVenta:1, tipoComprobante:11, concepto:2,
+    fecha:fecha||undefined,
+    fechaServicioDesde:pd||undefined, fechaServicioHasta:ph||undefined, fechaVtoPago:vto||undefined,
     tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0',
     importeNeto:0, importeIva:0, importeTotal:r.total, alicuotasIva:[],
     receptor:{ nombre:g.obraSocial, docTipo: docNro?80:99, docNro: docNro||'0', condicionIva:'IVA Responsable Inscripto',
       global:g.global, presentacion:g.presentacion, profesional:r.prof, matricula:r.mat },
-    items:[{descripcion:'Prestaciones medicas - '+r.prof+' (Mat. '+r.mat+') - global '+g.global, cantidad:1, precioUnitario:r.total, bonif:0, subtotal:r.total}] };
+    periodo:{ desde:pd, hasta:ph, vtoPago:vto },
+    items:[{descripcion:detalle, cantidad:1, precioUnitario:r.total, bonif:0, subtotal:r.total}] };
   closeModal(); toast('Emitiendo…');
   try{
     const res=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
