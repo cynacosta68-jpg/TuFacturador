@@ -351,7 +351,8 @@ let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null;
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
 const _clean=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-function nombrePdf(r){const per=_perMA(r.pHasta||r.pDesde);return _clean(r.prof)+'_'+String(r.pv).padStart(4,'0')+'-'+String(r.num).padStart(8,'0')+(per?'_'+per:'')+'.pdf';}
+const _MMYYYY=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+m[1]:'';};
+function nombrePdf(r){const per=_MMYYYY(r.pHasta||r.pDesde);return _clean(r.prof)+'_'+String(r.pv).padStart(5,'0')+'-'+String(r.num).padStart(8,'0')+(per?'_'+per:'')+'.pdf';}
 async function descargarPdf(j){
   const r=LOTE[LOTE_SEL].rows[j];
   const url=`/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf`;
