@@ -216,6 +216,53 @@ async function route(req, res, url) {
     }
   }
 
+  // --- Seguimiento de solicitudes de factura ---
+  // POST /api/solicitudes  -> registra/actualiza una solicitud (al pedir la factura)
+  if (req.method === 'POST' && url.pathname === '/api/solicitudes') {
+    const b = await readJsonBody(req);
+    const cuit = String(b.cuit || '').replace(/\D/g, '');
+    assertCuitAllowed(principal, cuit);
+    await db.query(
+      `INSERT INTO solicitudes (entorno, cuit_emisor, global, obra_social, cuit_os, profesional, matricula, email, total, periodo_desde, periodo_hasta, estado)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pendiente')
+       ON CONFLICT (cuit_emisor, entorno, global, matricula)
+       DO UPDATE SET email=EXCLUDED.email, obra_social=EXCLUDED.obra_social, cuit_os=EXCLUDED.cuit_os, profesional=EXCLUDED.profesional, total=EXCLUDED.total, periodo_desde=EXCLUDED.periodo_desde, periodo_hasta=EXCLUDED.periodo_hasta, estado='pendiente'`,
+      [config.env, cuit, b.global || '', b.obraSocial || '', b.cuitOS || '', b.profesional || '', b.matricula || '', b.email || '', b.total || 0, b.periodoDesde || '', b.periodoHasta || ''],
+    );
+    return sendJson(res, 200, { ok: true });
+  }
+  // GET /api/solicitudes?estado=pendiente  -> lista para el seguimiento
+  if (req.method === 'GET' && url.pathname === '/api/solicitudes') {
+    const estado = url.searchParams.get('estado');
+    const cond = ['entorno = $1'];
+    const params = [config.env];
+    if (estado) { params.push(estado); cond.push(`estado = $${params.length}`); }
+    let rows = (await db.query(`SELECT * FROM solicitudes WHERE ${cond.join(' AND ')} ORDER BY fecha_solicitud ASC`, params)).rows;
+    if (scopedRequiresCuit(principal)) rows = rows.filter((r) => principal.cuitAllow.includes(r.cuit_emisor));
+    return sendJson(res, 200, { ok: true, solicitudes: rows });
+  }
+  // POST /api/solicitudes/cargar  -> marca una solicitud como cargada
+  if (req.method === 'POST' && url.pathname === '/api/solicitudes/cargar') {
+    const b = await readJsonBody(req);
+    const cuit = String(b.cuit || '').replace(/\D/g, '');
+    assertCuitAllowed(principal, cuit);
+    await db.query(
+      `UPDATE solicitudes SET estado='cargada', fecha_carga=now(), cae=$5, nro_comprobante=$6
+       WHERE cuit_emisor=$1 AND entorno=$2 AND global=$3 AND matricula=$4`,
+      [cuit, config.env, b.global || '', b.matricula || '', b.cae || '', b.nroComprobante || ''],
+    );
+    return sendJson(res, 200, { ok: true });
+  }
+  // POST /api/solicitudes/reenviar  -> registra el reenvío (el email lo manda /api/solicitudes/email)
+  if (req.method === 'POST' && url.pathname === '/api/solicitudes/reenviar') {
+    const b = await readJsonBody(req);
+    const cuit = String(b.cuit || '').replace(/\D/g, '');
+    assertCuitAllowed(principal, cuit);
+    await db.query(`UPDATE solicitudes SET fecha_reenvio=now() WHERE cuit_emisor=$1 AND entorno=$2 AND global=$3 AND matricula=$4`,
+      [cuit, config.env, b.global || '', b.matricula || '']);
+    return sendJson(res, 200, { ok: true });
+  }
+
   // GET /api/tenants  -> CUITs con certificado cargado
   if (req.method === 'GET' && url.pathname === '/api/tenants') {
     let lista = await tenants.list(config.env);
