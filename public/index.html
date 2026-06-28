@@ -439,13 +439,42 @@ function importarLote(input){
           exento:+r.Exento||0,gravado:+r.Gravado||0,iva:+r.IVA||0,total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
       });
       const nuevos=Object.values(map);
-      let added=0, merged=0;
-      nuevos.forEach(ng=>{ const ex=LOTE.find(g=>g.global===ng.global); if(ex){ ex.rows.push(...ng.rows); merged+=ng.rows.length; } else { LOTE.push(ng); added++; } });
-      LOTE_SEL=null; input.value='';
-      toast('Importado: '+added+' globales nuevos'+(merged?(' · '+merged+' filas sumadas a globales existentes'):'')); vEmitir();
+      input.value='';
+      // Validación de duplicados: mismo comprobante (global + matrícula) y emisor ya presente en el lote
+      const existentes=new Set();
+      LOTE.forEach(g=>g.rows.forEach(r=>existentes.add(g.global+'||'+r.mat)));
+      const vistos=new Set(), dups=[];
+      nuevos.forEach(ng=>ng.rows.forEach(r=>{ const k=ng.global+'||'+r.mat; if(existentes.has(k)||vistos.has(k)) dups.push({global:ng.global,prof:r.prof,mat:r.mat}); vistos.add(k); }));
+      if(dups.length){
+        PENDIMP=nuevos;
+        const lista=dups.slice(0,12).map(d=>`<li><span class="mono">${d.global}</span> · ${d.prof||'(sin nombre)'} — mat. ${d.mat}</li>`).join('');
+        modal(`<h3>Comprobantes duplicados</h3>
+          <p>Se detectaron <b>${dups.length}</b> registro(s) con el <b>mismo número de comprobante y emisor</b> que ya están en el lote:</p>
+          <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;max-height:32vh;overflow:auto">${lista}${dups.length>12?`<li>…y ${dups.length-12} más</li>`:''}</ul>
+          <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarImport(true)">Importar solo los nuevos</button><button onclick="confirmarImport(false)">Cancelar</button></div>`);
+        return;
+      }
+      mergeLote(nuevos);
     }catch(err){ toast('No pude leer el Excel: '+err.message,true); }
   };
   rd.readAsArrayBuffer(file);
+}
+
+let PENDIMP=null;
+function mergeLote(nuevos){
+  let added=0, merged=0;
+  nuevos.forEach(ng=>{ if(!ng.rows.length) return; const ex=LOTE.find(g=>g.global===ng.global); if(ex){ ex.rows.push(...ng.rows); merged+=ng.rows.length; } else { LOTE.push(ng); added++; } });
+  LOTE_SEL=null;
+  toast('Importado: '+added+' globales nuevos'+(merged?(' · '+merged+' filas sumadas a globales existentes'):'')); vEmitir();
+}
+function confirmarImport(soloNuevos){
+  closeModal();
+  if(!soloNuevos || !PENDIMP){ PENDIMP=null; toast('Importación cancelada'); return; }
+  const existentes=new Set();
+  LOTE.forEach(g=>g.rows.forEach(r=>existentes.add(g.global+'||'+r.mat)));
+  const vistos=new Set();
+  PENDIMP.forEach(ng=>{ ng.rows=ng.rows.filter(r=>{ const k=ng.global+'||'+r.mat; if(existentes.has(k)||vistos.has(k)) return false; vistos.add(k); return true; }); });
+  mergeLote(PENDIMP); PENDIMP=null;
 }
 
 let DELGLOB=[], DELROWS=[];
@@ -780,13 +809,14 @@ async function vEmitirPymeForm(){
      <div class="f2"><div><label>Receptor — tipo de documento</label><select id="pe_doctipo" onchange="pymeRecalc()"><option value="80">CUIT</option><option value="86">CUIL</option><option value="96">DNI</option><option value="99">Consumidor final</option></select></div>
        <div><label>Nº de documento</label><input id="pe_docnro" class="mono" placeholder="30123456789"></div></div>
      <label>Razón social / Nombre del receptor</label><input id="pe_recnom" placeholder="Razón social">
+     <div class="f2"><div><label>Moneda</label><select id="pe_moneda" onchange="pymeMonedaView()"><option value="PES">Pesos (ARS)</option><option value="DOL">Dólares (USD)</option></select></div><div id="pe_cotiz_wrap"></div></div>
      <div id="pe_importes"></div>
      <div class="f2"><div><label>Fecha de emisión</label><input type="date" id="pe_fecha" value="${hoy}"></div><div id="pe_periodo_wrap"></div></div>
      <label>Detalle</label><textarea id="pe_detalle" style="min-height:60px">Venta de productos y/o servicios</textarea>
      <div id="pe_result" style="margin-top:10px"></div>
      <div class="row" style="margin-top:14px"><button class="primary" onclick="pymeEmitir()">Emitir y obtener CAE</button></div>
    </div>`;
-  pymeTipos();
+  pymeTipos(); pymeMonedaView();
 }
 
 const PYME_C_TYPES=['11','12','13','211','212','213'];
@@ -803,6 +833,10 @@ function pymeTipos(){
   }
   sel.innerHTML=html;
   pymeRecalc();
+}
+function pymeMonedaView(){
+  const m=$('#pe_moneda').value, w=$('#pe_cotiz_wrap');
+  w.innerHTML = m==='PES' ? '' : `<label>Cotización (1 USD = ? ARS)</label><input id="pe_cotiz" class="mono" type="number" step="0.01" placeholder="0.00">`;
 }
 
 function pymeRecalc(){
@@ -838,7 +872,9 @@ async function pymeEmitir(){
   else { neto=+($('#pe_neto').value||0); const a=+($('#pe_alic').value||0); iva=Math.round(neto*a)/100; total=neto+iva;
     if(iva>0) alic=[{id:(a===21?5:a===10.5?4:a===27?6:3), baseImponible:neto, importe:iva}]; }
   if(total<=0){ toast('Ingresá un importe válido',true); return; }
-  const body={ cuit, puntoVenta:1, tipoComprobante:tipo, concepto,
+  const moneda=$('#pe_moneda').value, cotiz = moneda==='PES'?1:(+(($('#pe_cotiz')||{}).value||0));
+  if(moneda!=='PES' && !(cotiz>0)){ toast('Ingresá la cotización del dólar',true); return; }
+  const body={ cuit, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
     tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
     importeNeto: esC?total:neto, importeIva: esC?0:iva, importeTotal:total, alicuotasIva:alic,
     receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
@@ -880,19 +916,20 @@ async function vSeguimientoPyme(){
     const btn=enviada
       ?`<button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="enviarFacturaPyme(${i})">Reenviar</button>`
       :`<button class="primary" style="padding:5px 10px;white-space:nowrap" onclick="enviarFacturaPyme(${i})">Enviar factura por mail</button>`;
-    return `<tr><td style="padding-left:16px;white-space:nowrap">${cliente}</td><td class="mono">${c.doc_nro||''}</td><td class="mono">${num}</td><td class="mono">${fch}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${btn}</td></tr>`;
+    return `<tr><td style="padding-left:16px;text-align:center"><input type="checkbox" class="selcbte" data-i="${i}" onchange="actualizarSelCbte()"></td><td style="white-space:nowrap">${cliente}</td><td class="mono">${c.doc_nro||''}</td><td class="mono">${num}</td><td class="mono">${fch}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${btn}</td></tr>`;
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Seguimiento de envíos</h2>
-    <span class="tag" style="margin-left:2px">${CBTES.length} comprobantes</span></div>
+    <span class="tag" style="margin-left:2px">${CBTES.length} comprobantes</span>
+    <button id="btnEnvSel" class="primary" style="margin-left:auto;display:none" onclick="enviarFacturasSeleccionadas()">Enviar a seleccionados (0)</button></div>
    <p class="hint" style="margin-top:6px">Enviá cada factura al cliente por mail (se adjunta el PDF) y queda registrada como <b>enviada</b>.</p>
    <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr>
-     <th style="padding-left:16px">Cliente</th><th>CUIT / Doc</th><th>N° Comprobante</th><th>Fecha</th><th>Estado</th><th style="padding-right:16px"></th>
+     <th style="padding-left:16px;width:34px;text-align:center"><input type="checkbox" id="selAllCbte" onchange="toggleSelAllCbte(this)"></th><th>Cliente</th><th>CUIT / Doc</th><th>N° Comprobante</th><th>Fecha</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function enviarFacturaPyme(i){
   const c=CBTES[i], meta=c.meta||{}, cliente=(meta.receptor&&meta.receptor.nombre)||'';
   const num=String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
-  const cuerpo=`Hola,\n\nTe enviamos adjunta la factura ${num}.\n\nSaludos.`;
+  const cuerpo=mailFacturaBody(cliente,num);
   modal(`<h3>Enviar factura por mail</h3>
     <label>Cliente</label><input value="${cliente}" readonly>
     <label>Email del cliente</label><input id="ef_email" value="${c.enviado_to||''}" placeholder="cliente@email.com">
@@ -910,6 +947,44 @@ async function confirmarEnvioFactura(i){
     if(res.sent){ toast('Factura enviada a '+to); vSeguimiento(); }
     else { toast(res.reason||'No se pudo enviar (revisá SMTP)',true); }
   }catch(e){ toast('No se pudo enviar',true); }
+}
+
+let ENVSEL=[];
+function mailFacturaBody(cliente,num){
+  return `Hola ${cliente},\nLe adjuntamos la factura N° ${num}.\nGracias por confiar en nuestros servicios.\n¡Saludos!\nEquipo de Administración y Finanzas.`;
+}
+function actualizarSelCbte(){
+  const n=document.querySelectorAll('.selcbte:checked').length;
+  const b=$('#btnEnvSel'); if(b){ b.style.display=n?'inline-flex':'none'; b.textContent='Enviar a seleccionados ('+n+')'; }
+  const all=$('#selAllCbte'), tot=document.querySelectorAll('.selcbte').length;
+  if(all) all.checked = n>0 && n===tot;
+}
+function toggleSelAllCbte(cb){ document.querySelectorAll('.selcbte').forEach(c=>c.checked=cb.checked); actualizarSelCbte(); }
+function enviarFacturasSeleccionadas(){
+  ENVSEL=[...document.querySelectorAll('.selcbte:checked')].map(c=>+c.dataset.i);
+  if(!ENVSEL.length) return;
+  const filas=ENVSEL.map(i=>{
+    const c=CBTES[i], meta=c.meta||{}, cliente=(meta.receptor&&meta.receptor.nombre)||'—';
+    const num=String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
+    return `<tr><td style="padding:4px 8px;white-space:nowrap">${cliente}</td><td class="mono" style="padding:4px 8px">${num}</td><td style="padding:4px 8px"><input class="envmail" data-i="${i}" value="${c.enviado_to||''}" placeholder="cliente@email.com" style="width:100%"></td></tr>`;
+  }).join('');
+  modal(`<h3>Enviar facturas por mail (${ENVSEL.length})</h3>
+    <p class="hint">Completá el email de cada cliente. Se adjunta el PDF y se usa el mensaje estándar de Administración y Finanzas.</p>
+    <div style="max-height:48vh;overflow:auto"><table style="width:100%"><thead><tr><th style="text-align:left;padding:4px 8px">Cliente</th><th style="text-align:left;padding:4px 8px">N°</th><th style="text-align:left;padding:4px 8px">Email</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarEnvioSeleccion()">Enviar a todos</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function confirmarEnvioSeleccion(){
+  const jobs=[...document.querySelectorAll('.envmail')].map(inp=>({i:+inp.dataset.i,to:inp.value.trim()})).filter(j=>j.to);
+  if(!jobs.length){ toast('Completá al menos un email',true); return; }
+  closeModal(); toast('Enviando '+jobs.length+' factura(s)…');
+  let ok=0, fail=0;
+  for(const j of jobs){
+    const c=CBTES[j.i], meta=c.meta||{}, cliente=(meta.receptor&&meta.receptor.nombre)||'';
+    const num=String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
+    try{ const res=await api(`/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/enviar`,{method:'POST',body:JSON.stringify({to:j.to,subject:'Factura '+num,body:mailFacturaBody(cliente,num)})});
+      if(res.sent) ok++; else fail++; }catch(e){ fail++; }
+  }
+  toast('Enviadas: '+ok+(fail?(' · fallaron '+fail):'')); vSeguimiento();
 }
 
 /* ---------- COMPROBANTES ---------- */
