@@ -440,17 +440,15 @@ function importarLote(input){
       });
       const nuevos=Object.values(map);
       input.value='';
-      // Validación de duplicados: mismo comprobante (global + matrícula) y emisor ya presente en el lote
-      const existentes=new Set();
-      LOTE.forEach(g=>g.rows.forEach(r=>existentes.add(g.global+'||'+r.mat)));
-      const vistos=new Set(), dups=[];
-      nuevos.forEach(ng=>ng.rows.forEach(r=>{ const k=ng.global+'||'+r.mat; if(existentes.has(k)||vistos.has(k)) dups.push({global:ng.global,prof:r.prof,mat:r.mat}); vistos.add(k); }));
+      // Validación: un Comprobante global ya importado no se vuelve a traer ni se le suman líneas (mismo emisor)
+      const existentes=new Set(LOTE.map(g=>g.global));
+      const dups=nuevos.filter(ng=>existentes.has(ng.global));
       if(dups.length){
         PENDIMP=nuevos;
-        const lista=dups.slice(0,12).map(d=>`<li><span class="mono">${d.global}</span> · ${d.prof||'(sin nombre)'} — mat. ${d.mat}</li>`).join('');
-        modal(`<h3>Comprobantes duplicados</h3>
-          <p>Se detectaron <b>${dups.length}</b> registro(s) con el <b>mismo número de comprobante y emisor</b> que ya están en el lote:</p>
-          <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;max-height:32vh;overflow:auto">${lista}${dups.length>12?`<li>…y ${dups.length-12} más</li>`:''}</ul>
+        const lista=dups.slice(0,15).map(d=>`<li><span class="mono">${d.global}</span>${d.obraSocial?(' · '+d.obraSocial):''}</li>`).join('');
+        modal(`<h3>Comprobante global duplicado</h3>
+          <p>Estos comprobantes globales <b>ya están importados</b> (mismo número y emisor). No se vuelven a importar ni se les suman líneas:</p>
+          <ul style="margin:8px 0 0;padding-left:18px;font-size:13px;max-height:32vh;overflow:auto">${lista}${dups.length>15?`<li>…y ${dups.length-15} más</li>`:''}</ul>
           <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarImport(true)">Importar solo los nuevos</button><button onclick="confirmarImport(false)">Cancelar</button></div>`);
         return;
       }
@@ -462,18 +460,15 @@ function importarLote(input){
 
 let PENDIMP=null;
 function mergeLote(nuevos){
-  let added=0, merged=0;
-  nuevos.forEach(ng=>{ if(!ng.rows.length) return; const ex=LOTE.find(g=>g.global===ng.global); if(ex){ ex.rows.push(...ng.rows); merged+=ng.rows.length; } else { LOTE.push(ng); added++; } });
+  const existentes=new Set(LOTE.map(g=>g.global));
+  let added=0, skipped=0;
+  nuevos.forEach(ng=>{ if(existentes.has(ng.global)){ skipped++; return; } LOTE.push(ng); existentes.add(ng.global); added++; });
   LOTE_SEL=null;
-  toast('Importado: '+added+' globales nuevos'+(merged?(' · '+merged+' filas sumadas a globales existentes'):'')); vEmitir();
+  toast('Importado: '+added+' comprobante(s) global(es)'+(skipped?(' · '+skipped+' duplicado(s) omitido(s)'):'')); vEmitir();
 }
 function confirmarImport(soloNuevos){
   closeModal();
   if(!soloNuevos || !PENDIMP){ PENDIMP=null; toast('Importación cancelada'); return; }
-  const existentes=new Set();
-  LOTE.forEach(g=>g.rows.forEach(r=>existentes.add(g.global+'||'+r.mat)));
-  const vistos=new Set();
-  PENDIMP.forEach(ng=>{ ng.rows=ng.rows.filter(r=>{ const k=ng.global+'||'+r.mat; if(existentes.has(k)||vistos.has(k)) return false; vistos.add(k); return true; }); });
   mergeLote(PENDIMP); PENDIMP=null;
 }
 
@@ -1013,7 +1008,7 @@ async function vComprobantes(){
   const rows=comprobantes.map((c,i)=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${String(c.punto_venta).padStart(5,'0')}-${String(c.numero).padStart(8,'0')}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
     <td><button class="ghost" onclick="descargarCbtePdf(${i})">PDF</button></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
-  v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes emitidos</h2><a href="/api/comprobantes/export.csv" style="margin-left:auto"><button>Exportar CSV</button></a></div>
+  v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes emitidos</h2><a href="/api/comprobantes/export.csv?perfil=${PERFIL}" style="margin-left:auto"><button>Exportar CSV</button></a></div>
    <div class="card" style="margin-top:12px;overflow-x:auto"><table><thead><tr><th>CUIT</th><th>N° Comprobante</th><th>Tipo</th><th>Fecha</th><th>CAE</th><th>Total</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
