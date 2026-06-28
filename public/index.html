@@ -112,6 +112,8 @@
   .progp{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;background:var(--accent);padding:1px 6px;border-radius:999px;min-width:40px;text-align:center}
   td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
   .segtbl td{vertical-align:middle}
+  .perfilbtn{font-size:13px}
+  .perfilbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -121,6 +123,11 @@
     <div class="logo" style="margin:0 auto 14px;width:44px;height:44px;border-radius:12px"><svg viewBox="0 0 64 64" width="30" height="30" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z"/><rect x="21" y="39" width="22" height="6" rx="1" fill="#fff"/></svg></div>
     <h1 style="margin:0 0 4px">Facturador Masivo</h1>
     <p class="hint" style="margin:0 0 18px">Bienvenido al portal de Emisiones Masivas en ARCA</p>
+    <label style="text-align:left">Perfil</label>
+    <div class="row" style="gap:8px;margin:0 0 12px">
+      <button type="button" class="perfilbtn" data-p="asociacion" onclick="setPerfil('asociacion')" style="flex:1">Asociación médica</button>
+      <button type="button" class="perfilbtn" data-p="pyme" onclick="setPerfil('pyme')" style="flex:1">PyME</button>
+    </div>
     <label style="text-align:left">Usuario</label><input id="lu" autocomplete="username">
     <label style="text-align:left">Contraseña</label>
     <div class="pwwrap"><input id="lp" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"><button class="eye" type="button" tabindex="-1" aria-label="Mostrar u ocultar contraseña" onclick="togglePw('lp',this)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></div>
@@ -161,7 +168,7 @@ function modal(html){$('#modalBody').innerHTML=html;$('#modal').classList.add('o
 function closeModal(){$('#modal').classList.remove('open');}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal();});
 
-function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').classList.add('hidden');
+function showLogin(){$('#loginView').classList.remove('hidden');$('#appView').classList.add('hidden');try{setPerfil(PERFIL);}catch(_){}
   fetch('/api/auth/config').then(r=>r.json()).then(c=>{
     $('#oidcBtn').innerHTML=c.oidc?'<a href="/api/auth/oidc/login"><button style="width:100%;margin-top:8px">Entrar con Lockatus</button></a>':'';
   }).catch(()=>{});}
@@ -171,6 +178,9 @@ async function doLogin(){
 }
 async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentials:'include'}); showLogin(); }
 
+let PERFIL=(()=>{try{return localStorage.getItem('arcanum_perfil')||'asociacion';}catch(_){return 'asociacion';}})();
+function setPerfil(p){ PERFIL=p; try{localStorage.setItem('arcanum_perfil',p);}catch(_){}
+  document.querySelectorAll('.perfilbtn').forEach(b=>b.classList.toggle('active', b.dataset.p===p)); }
 const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['comprobantes','Comprobantes'],['seguimiento','Seguimiento'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
 function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
@@ -370,6 +380,7 @@ async function descargarPdf(j){
 }
 
 async function vEmitir(){
+  if(PERFIL==='pyme') return vEmitirPymeHome();
   const v=$('#view');
   const {tenants}=await api('/api/tenants');
   const conCert=tenants.filter(t=>t.tieneCertificado);
@@ -698,6 +709,107 @@ async function confirmarReenvio(i){
     await api('/api/solicitudes/reenviar',{method:'POST',body:JSON.stringify({cuit:s.cuit_emisor,global:s.global,matricula:s.matricula})}).catch(()=>{});
     toast(res.sent?('Solicitud reenviada a '+email):'Servidor sin SMTP: revisá la config');
   }catch(e){ toast('No se pudo reenviar',true); }
+}
+
+/* ---------- EMITIR PyME ---------- */
+async function vEmitirPymeHome(){
+  const v=$('#view');
+  const {tenants}=await api('/api/tenants');
+  const conCert=tenants.filter(t=>t.tieneCertificado);
+  if(!conCert.length){ v.innerHTML=`<div class="hero reveal"><h2>Cargá un certificado para emitir</h2><p>Necesitás al menos un cliente con certificado vigente.</p><div class="row"><button class="primary" onclick="go('clientes')">Ir a Clientes</button></div></div>`; return; }
+  v.innerHTML=`<div class="hero reveal"><h2>Emisión — perfil PyME</h2>
+     <p>Emití un comprobante y obtené el CAE al instante, o importá comprobantes en lote.</p>
+     <div class="row"><button class="primary" onclick="vEmitirPymeForm()">Emitir y obtener CAE</button><button onclick="vEmitirLista($('#view'))">Importar nuevo comprobante</button></div></div>`;
+}
+
+async function vEmitirPymeForm(){
+  const v=$('#view');
+  const {tenants}=await api('/api/tenants');
+  const conCert=tenants.filter(t=>t.tieneCertificado);
+  const opts=conCert.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?(' - '+t.nombre):''}</option>`).join('');
+  const hoy=new Date().toISOString().slice(0,10);
+  v.innerHTML=`<div class="row"><button onclick="go('emitir')">← Volver</button><h2 style="margin:0 0 0 6px;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Emitir y obtener CAE</h2></div>
+   <div class="card reveal" style="margin-top:12px;max-width:780px">
+     <div class="f2"><div><label>Emisor</label><select id="pe_emisor">${opts}</select></div>
+       <div><label>Condición del emisor</label><select id="pe_cond" onchange="pymeTipos()"><option value="MONO">Monotributo</option><option value="RI">Responsable Inscripto</option><option value="EX">Exento</option></select></div></div>
+     <div class="f2"><div><label>Tipo de comprobante</label><select id="pe_tipo" onchange="pymeRecalc()"></select></div>
+       <div><label>Concepto</label><select id="pe_concepto" onchange="pymeRecalc()"><option value="1">Productos</option><option value="2">Servicios</option><option value="3">Productos y servicios</option></select></div></div>
+     <div class="f2"><div><label>Receptor — tipo de documento</label><select id="pe_doctipo" onchange="pymeRecalc()"><option value="80">CUIT</option><option value="86">CUIL</option><option value="96">DNI</option><option value="99">Consumidor final</option></select></div>
+       <div><label>Nº de documento</label><input id="pe_docnro" class="mono" placeholder="30123456789"></div></div>
+     <label>Razón social / Nombre del receptor</label><input id="pe_recnom" placeholder="Razón social">
+     <div id="pe_importes"></div>
+     <div class="f2"><div><label>Fecha de emisión</label><input type="date" id="pe_fecha" value="${hoy}"></div><div id="pe_periodo_wrap"></div></div>
+     <label>Detalle</label><textarea id="pe_detalle" style="min-height:60px">Venta de productos y/o servicios</textarea>
+     <div id="pe_result" style="margin-top:10px"></div>
+     <div class="row" style="margin-top:14px"><button class="primary" onclick="pymeEmitir()">Emitir y obtener CAE</button></div>
+   </div>`;
+  pymeTipos();
+}
+
+function pymeTipos(){
+  const cond=$('#pe_cond').value, sel=$('#pe_tipo');
+  const tipos = cond==='RI' ? [['1','Factura A'],['6','Factura B']] : [['11','Factura C']];
+  sel.innerHTML=tipos.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+  pymeRecalc();
+}
+
+function pymeRecalc(){
+  const tipo=$('#pe_tipo').value, esC=tipo==='11', cont=$('#pe_importes');
+  if(esC){
+    cont.innerHTML=`<label>Importe total</label><input id="pe_total" class="mono" type="number" step="0.01" placeholder="0.00" oninput="pymeTotalView()"><div id="pe_totview" class="hint" style="margin-top:6px"></div>`;
+  } else {
+    cont.innerHTML=`<div class="f2"><div><label>Neto gravado</label><input id="pe_neto" class="mono" type="number" step="0.01" placeholder="0.00" oninput="pymeTotalView()"></div>
+      <div><label>Alícuota IVA</label><select id="pe_alic" onchange="pymeTotalView()"><option value="21">21%</option><option value="10.5">10,5%</option><option value="27">27%</option><option value="0">0%</option></select></div></div>
+      <div id="pe_totview" class="hint" style="margin-top:6px"></div>`;
+  }
+  const concepto=$('#pe_concepto').value, pw=$('#pe_periodo_wrap'), hoy=new Date().toISOString().slice(0,10);
+  pw.innerHTML=(concepto==='2'||concepto==='3')
+    ? `<label>Período del servicio / Vto. pago</label><div class="row" style="gap:6px"><input type="date" id="pe_pd" value="${hoy}"><input type="date" id="pe_ph" value="${hoy}"><input type="date" id="pe_vto" value="${hoy}"></div>`
+    : '';
+  pymeTotalView();
+}
+
+function pymeTotalView(){
+  const tipo=$('#pe_tipo').value, tv=$('#pe_totview'); if(!tv) return;
+  if(tipo==='11'){ const t=+(($('#pe_total')||{}).value||0); tv.textContent='Total: $ '+_fmt(t); }
+  else { const neto=+(($('#pe_neto')||{}).value||0), alic=+(($('#pe_alic')||{}).value||0), iva=Math.round(neto*alic)/100; tv.textContent=`Neto $ ${_fmt(neto)} + IVA $ ${_fmt(iva)} = Total $ ${_fmt(neto+iva)}`; }
+}
+
+async function pymeEmitir(){
+  const cuit=$('#pe_emisor').value, tipo=+$('#pe_tipo').value, concepto=+$('#pe_concepto').value;
+  const docTipo=+$('#pe_doctipo').value;
+  let docNro=($('#pe_docnro').value||'').replace(/\D/g,''); if(docTipo===99) docNro='0';
+  const recnom=$('#pe_recnom').value.trim(), fecha=$('#pe_fecha').value, detalle=($('#pe_detalle').value||'').trim();
+  let neto=0, iva=0, total=0, alic=[];
+  if(tipo===11){ total=+($('#pe_total').value||0); neto=total; }
+  else { neto=+($('#pe_neto').value||0); const a=+($('#pe_alic').value||0); iva=Math.round(neto*a)/100; total=neto+iva;
+    if(iva>0) alic=[{id:(a===21?5:a===10.5?4:a===27?6:3), baseImponible:neto, importe:iva}]; }
+  if(total<=0){ toast('Ingresá un importe válido',true); return; }
+  const body={ cuit, puntoVenta:1, tipoComprobante:tipo, concepto,
+    tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
+    importeNeto: tipo===11?total:neto, importeIva: tipo===11?0:iva, importeTotal:total, alicuotasIva:alic,
+    receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
+    fecha:fecha||undefined,
+    items:[{descripcion:detalle||'Venta', cantidad:1, precioUnitario:total, bonif:0, subtotal:total}] };
+  if(concepto===2||concepto===3){ const pd=($('#pe_pd')||{}).value, ph=($('#pe_ph')||{}).value, vto=($('#pe_vto')||{}).value;
+    body.fechaServicioDesde=pd; body.fechaServicioHasta=ph; body.fechaVtoPago=vto; body.periodo={desde:pd,hasta:ph,vtoPago:vto}; }
+  $('#pe_result').innerHTML='<p class="hint">Emitiendo…</p>';
+  try{
+    const res=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
+    const c=res.comprobante;
+    if(!c.aprobado) throw new Error((c.observaciones&&c.observaciones[0]&&c.observaciones[0].message)||(c.errores&&c.errores[0]&&c.errores[0].message)||'Rechazado por ARCA');
+    const num=String(c.puntoVenta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
+    $('#pe_result').innerHTML=`<div class="card" style="border:1px solid var(--ok)"><span class="tag ok">APROBADO</span> CAE <span class="mono">${c.cae}</span> · Comprobante <span class="mono">${num}</span> <button class="ghost" style="padding:3px 8px;margin-left:8px" onclick="descargarPymePdf('${c.cuit}',${c.puntoVenta},${c.tipoComprobante},${c.numero})">PDF</button></div>`;
+    toast('CAE obtenido: '+c.cae);
+  }catch(e){ $('#pe_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span> ${e.message}</div>`; toast(e.message,true); }
+}
+
+async function descargarPymePdf(cuit,pv,tipo,num){
+  try{ const resp=await fetch(`/api/comprobantes/${cuit}/${pv}/${tipo}/${num}/pdf`,{credentials:'include'}); if(!resp.ok) throw 0;
+    const blob=await resp.blob(), a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='comprobante_'+String(pv).padStart(5,'0')+'-'+String(num).padStart(8,'0')+'.pdf';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  }catch(e){ toast('No se pudo descargar el PDF',true); }
 }
 
 /* ---------- COMPROBANTES ---------- */
