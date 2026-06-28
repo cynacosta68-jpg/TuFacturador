@@ -54,4 +54,12 @@ async function notify(evento, data) {
   }
 }
 
-module.exports = { notify, enabled };
+async function send(to, subject, text) {
+  const t = init();
+  if (!t) { const e = new Error('SMTP no configurado'); e.code = 'NO_SMTP'; throw e; }
+  await t.sendMail({ from: process.env.ARCANUM_SMTP_FROM || 'arcanum@localhost', to, subject, text });
+}
+
+function canSend() { return !!process.env.ARCANUM_SMTP_HOST; }
+
+module.exports = { notify, enabled, send, canSend };
