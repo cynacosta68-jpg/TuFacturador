@@ -400,7 +400,7 @@ function importarLote(input){
       data.forEach(r=>{
         const g=String(r.ComprobanteGlobal||'').trim(); if(!g) return;
         if(!map[g]) map[g]={global:g,obraSocial:r.ObraSocial||'',cuitOS:String(r.CuitObraSocial||''),presentacion:String(r.Presentacion||''),rows:[]};
-        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
+        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',delegacion:String(r.Delegacion||'SI').toUpperCase().trim(),email:String(r.Email||'').trim(),tipo:String(r.TipoComprobante||'C'),pDesde:String(r.PeriodoDesde||''),pHasta:String(r.PeriodoHasta||''),
           exento:+r.Exento||0,gravado:+r.Gravado||0,iva:+r.IVA||0,total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
       });
       LOTE=Object.values(map); LOTE_SEL=null;
@@ -418,9 +418,17 @@ function vEmitirDetalle(v){
   const m=n=>(+n)?_fmt(n):'—';
   const per=(g.rows[0]&&g.rows[0].pDesde)?(g.rows[0].pDesde+' a '+g.rows[0].pHasta):'';
   const rows=g.rows.map((r,j)=>{
-    const est=r.estado==='ok'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae}</span><a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a></span>`
+    const pdfLink=`<a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`;
+    const est=r.estado==='ok'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae}</span>${pdfLink}</span>`
+      :r.estado==='recibida'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae} · recibida</span>${r.pdfUrl?`<a href="${r.pdfUrl}" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`:''}</span>`
+      :r.estado==='solicitada'?`<span class="tag warn">solicitada</span>`
       :r.estado==='err'?`<span class="tag no" title="${(r.err||'').replace(/"/g,'')}">rechazada</span>`:`<span class="tag warn">pendiente</span>`;
-    const acc=r.estado==='ok'?'':`<button class="primary" onclick="previewEmision(${j})">Emitir y obtener CAE</button>`;
+    let acc='';
+    if(r.estado==='ok'||r.estado==='recibida') acc='';
+    else if(r.delegacion==='NO') acc = r.estado==='solicitada'
+        ? `<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`
+        : `<button onclick="solicitarFactura(${j})">Solicitar factura</button>`;
+    else acc=`<button class="primary" onclick="previewEmision(${j})">Emitir y obtener CAE</button>`;
     return `<tr><td style="padding-left:16px">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
       <td class="num">$ ${_fmt(r.total)}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${acc}</td></tr>`;
@@ -476,6 +484,44 @@ async function confirmarEmision(j){
     r.estado='ok'; r.cae=c.cae; r.pv=c.puntoVenta; r.num=c.numero;
     vEmitir(); toast('CAE obtenido: '+c.cae);
   }catch(e){ r.estado='err'; r.err=e.message; vEmitir(); toast(e.message,true); }
+}
+
+function solicitarFactura(j){
+  const g=LOTE[LOTE_SEL], r=g.rows[j];
+  const per=(r.pDesde||'')+' a '+(r.pHasta||'');
+  const asunto=`Solicitud de factura - ${g.obraSocial} - periodo ${_perMA(r.pHasta||r.pDesde)}`;
+  const cuerpo=`Hola ${r.prof},\n\nTe solicito la factura por las prestaciones de ${g.obraSocial} (presentacion ${g.presentacion}), periodo ${per}, por un total de $ ${_fmt(r.total)}.\n\nPor favor emitila a nombre de ${g.obraSocial} (CUIT ${g.cuitOS}) y responde este mail adjuntando el PDF con su CAE.\n\nGracias.`;
+  modal(`<h3>Solicitar factura</h3>
+    <label>Profesional</label><input value="${r.prof}" readonly>
+    <label>Email del profesional</label><input id="s_email" value="${r.email||''}" placeholder="profesional@email.com">
+    <label>Asunto</label><input id="s_asunto" value="${asunto.replace(/"/g,'&quot;')}">
+    <label>Mensaje</label><textarea id="s_msg" style="min-height:150px">${cuerpo}</textarea>
+    <p class="hint" style="margin-top:6px">Se abrirá tu programa de correo con el mensaje listo para enviar.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="enviarSolicitud(${j})">Abrir email y marcar solicitada</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+function enviarSolicitud(j){
+  const r=LOTE[LOTE_SEL].rows[j];
+  const email=$('#s_email').value.trim(), asunto=$('#s_asunto').value, msg=$('#s_msg').value;
+  if(!email){ toast('Falta el email del profesional',true); return; }
+  r.email=email; r.estado='solicitada';
+  window.location.href=`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(msg)}`;
+  closeModal(); vEmitir(); toast('Marcada como solicitada');
+}
+function cargarRecibida(j){
+  const r=LOTE[LOTE_SEL].rows[j];
+  modal(`<h3>Cargar factura recibida</h3>
+    <p class="hint">Subí el PDF que te envió ${r.prof} y cargá el CAE que figura en el comprobante.</p>
+    <label>PDF de la factura</label><input type="file" id="r_pdf" accept="application/pdf">
+    <div class="f2"><div><label>CAE</label><input id="r_cae" class="mono" placeholder="75123456789012"></div>
+      <div><label>Nº comprobante</label><input id="r_num" class="mono" placeholder="0001-00000123"></div></div>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarRecibida(${j})">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+function guardarRecibida(j){
+  const r=LOTE[LOTE_SEL].rows[j];
+  const cae=$('#r_cae').value.trim(), num=$('#r_num').value.trim(), file=$('#r_pdf').files[0];
+  if(!cae){ toast('Ingresá el CAE',true); return; }
+  r.estado='recibida'; r.cae=cae; r.numRec=num; if(file) r.pdfUrl=URL.createObjectURL(file);
+  closeModal(); vEmitir(); toast('Factura recibida cargada');
 }
 
 /* ---------- COMPROBANTES ---------- */
