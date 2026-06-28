@@ -669,7 +669,7 @@ async function descargarCbtePdf(i){
 async function vComprobantes(){
   const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
   CBTES=comprobantes;
-  const rows=comprobantes.map((c,i)=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${c.punto_venta}-${c.numero}</td><td>${c.tipo_cbte}</td>
+  const rows=comprobantes.map((c,i)=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${String(c.punto_venta).padStart(5,'0')}-${String(c.numero).padStart(8,'0')}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
     <td><button class="ghost" onclick="descargarCbtePdf(${i})">PDF</button></td></tr>`).join('')||'<tr><td colspan="7" class="hint">Todavía no emitiste comprobantes.</td></tr>';
   v.innerHTML=`<div class="row"><h2 style="margin:0">Comprobantes emitidos</h2><a href="/api/comprobantes/export.csv" style="margin-left:auto"><button>Exportar CSV</button></a></div>
