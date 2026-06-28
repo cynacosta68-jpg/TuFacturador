@@ -429,7 +429,7 @@ function vEmitirDetalle(v){
     const pend=esPend(r);
     const chk=pend?`<input type="checkbox" class="selrow" data-j="${j}" onchange="actualizarSel()">`:'';
     let acc='';
-    if(r.estado==='solicitada') acc=`<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`;
+    if(r.estado==='solicitada') acc=`<button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="cargarRecibida(${j})">Cargar factura</button>`;
     else if(pend) acc=`<button class="primary" style="padding:5px 10px" onclick="previewEmision(${j})">Emitir CAE</button>`;
     return `<tr><td style="padding-left:16px;text-align:center">${chk}</td><td style="white-space:nowrap">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
