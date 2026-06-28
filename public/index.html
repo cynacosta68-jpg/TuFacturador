@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2327408b'/%3E%3Cpath fill='%23fff' fill-rule='evenodd' d='M12 54 L12 24 A20 20 0 0 1 52 24 L52 54 L43 54 L43 24 A11 11 0 0 0 21 24 L21 54 Z'/%3E%3Crect x='21' y='39' width='22' height='6' rx='1' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>(function(){try{var t=localStorage.arcanumTheme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <style>
   :root{
@@ -103,6 +104,11 @@
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
   .bars .b{transition:height .7s cubic-bezier(.22,1,.36,1)}
   @media(prefers-reduced-motion:reduce){.reveal{animation:none}.bars .b{transition:none}}
+  .progw{display:flex;align-items:center;gap:8px}
+  .prog{height:7px;background:var(--chip);border-radius:999px;overflow:hidden;min-width:90px}
+  .prog>i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .6s cubic-bezier(.22,1,.36,1)}
+  .progp{font-family:var(--mono);font-size:11px;font-weight:700;color:#fff;background:var(--accent);padding:1px 6px;border-radius:999px;min-width:40px;text-align:center}
+  td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -338,49 +344,122 @@ async function guardarServicio(existing){
 }
 async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{method:'POST'});toast('Restaurado');closeModal();vServicios();}catch(e){toast(e.message,true);}}
 
-/* ---------- EMITIR ---------- */
+/* ---------- EMITIR (lotes, dos niveles) ---------- */
+let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null;
+const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
 async function vEmitir(){
-  const v=$('#view');const {tenants}=await api('/api/tenants');
-  const opt=tenants.filter(t=>t.tieneCertificado).map(t=>`<option value="${t.cuit}">${t.cuit} — ${t.nombre||''}</option>`).join('');
-  v.innerHTML=`<h2>Emitir comprobante (WSFEv1)</h2>
-   <div class="card" style="max-width:680px">
-    ${opt?'':'<p class="hint">No hay clientes con certificado cargado. Cargá uno en la pestaña Clientes.</p>'}
-    <div class="f2"><div><label>CUIT emisor</label><select id="e_cuit">${opt}</select></div>
-    <div><label>Punto de venta</label><input id="e_pv" value="1"></div></div>
-    <div class="f3">
-      <div><label>Tipo</label><select id="e_tipo"><option value="11">Factura C</option><option value="6">Factura B</option><option value="1">Factura A</option><option value="13">Nota Crédito C</option><option value="3">Nota Crédito A</option></select></div>
-      <div><label>Concepto</label><select id="e_concepto"><option value="1">Productos</option><option value="2">Servicios</option><option value="3">Ambos</option></select></div>
-      <div><label>Doc receptor</label><select id="e_doctipo"><option value="99">Consumidor final</option><option value="80">CUIT</option><option value="96">DNI</option></select></div>
-    </div>
-    <div class="f2"><div><label>Nro doc receptor</label><input id="e_docnro" value="0" class="mono"></div>
-    <div><label>Neto gravado</label><input id="e_neto" value="100" class="mono" oninput="recalc()"></div></div>
-    <div class="f3"><div><label>Alícuota IVA</label><select id="e_alic" onchange="recalc()"><option value="5">21%</option><option value="4">10.5%</option><option value="6">5%</option><option value="3">27%</option><option value="9">0%</option></select></div>
-    <div><label>IVA</label><input id="e_iva" class="mono" readonly></div>
-    <div><label>Total</label><input id="e_total" class="mono" readonly></div></div>
-    <button class="primary" style="margin-top:16px" onclick="emitir()">Emitir y obtener CAE</button>
-   </div><div id="e_result" style="margin-top:16px"></div>`;
-  recalc();
+  const v=$('#view');
+  const {tenants}=await api('/api/tenants');
+  const conCert=tenants.filter(t=>t.tieneCertificado);
+  if(!conCert.length){ v.innerHTML=`<div class="hero reveal"><h2>Cargá un certificado para emitir</h2><p>Necesitás al menos un cliente con certificado vigente.</p><div class="row"><button class="primary" onclick="go('clientes')">Ir a Clientes</button></div></div>`; return; }
+  EMISOR_CUIT=conCert[0].cuit;
+  if(LOTE_SEL===null) vEmitirLista(v); else vEmitirDetalle(v);
 }
-const ALIC={5:21,4:10.5,6:5,3:27,9:0};
-function recalc(){const neto=parseFloat($('#e_neto').value||0);const p=ALIC[$('#e_alic').value]||0;const iva=+(neto*p/100).toFixed(2);
-  $('#e_iva').value=iva.toFixed(2);$('#e_total').value=(neto+iva).toFixed(2);}
-async function emitir(){
-  const neto=parseFloat($('#e_neto').value||0),iva=parseFloat($('#e_iva').value||0),tipo=+$('#e_tipo').value,alic=+$('#e_alic').value;
-  const tipoC=[11,13].includes(tipo);
-  const body={cuit:$('#e_cuit').value,puntoVenta:+$('#e_pv').value,tipoComprobante:tipo,concepto:+$('#e_concepto').value,
-    tipoDocReceptor:+$('#e_doctipo').value,nroDocReceptor:$('#e_docnro').value,
-    importeNeto:tipoC?0:neto,importeIva:tipoC?0:iva,importeTotal:tipoC?neto+iva:neto+iva,
-    alicuotasIva:tipoC?[]:[{id:alic,baseImponible:neto,importe:iva}]};
-  if(tipoC){body.importeNeto=neto+iva;body.importeIva=0;body.importeTotal=neto+iva;}
-  $('#e_result').innerHTML='<p class="hint">Emitiendo…</p>';
-  try{ const r=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});const c=r.comprobante;
-    $('#e_result').innerHTML=`<div class="card"><span class="tag ok">APROBADO</span>
-      <table style="margin-top:10px"><tr><th>CAE</th><td class="mono">${c.cae}</td></tr>
-      <tr><th>Vto CAE</th><td class="mono">${c.caeVencimiento}</td></tr>
-      <tr><th>Comprobante</th><td class="mono">${c.puntoVenta}-${c.numero}</td></tr></table>
-      <a href="/api/comprobantes/${c.cuit}/${c.puntoVenta}/${c.tipoComprobante}/${c.numero}/pdf"><button class="primary" style="margin-top:10px">Descargar PDF con QR</button></a></div>`;
-    toast('CAE obtenido'); }
-  catch(e){ $('#e_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span><p>${e.message}</p></div>`; }
+
+function vEmitirLista(v){
+  if(!LOTE.length){
+    v.innerHTML=`<div class="hero reveal">
+       <h2>Detalle de facturación a emitir</h2>
+       <p>Importá tu lote (.xlsx): cada fila es un profesional, agrupados por comprobante global de la asociación. Después emitís cada uno y obtenés su CAE.</p>
+       <div class="row"><button class="primary" onclick="$('#fileLote').click()">Importar lote (.xlsx)</button></div>
+       <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>`;
+    return;
+  }
+  const rows=LOTE.map((g,i)=>{
+    const emit=g.rows.filter(r=>r.estado==='ok').length, tot=g.rows.length, pct=Math.round(100*emit/tot);
+    const totalG=g.rows.reduce((a,r)=>a+(+r.total||0),0);
+    return `<tr ondblclick="abrirGlobal(${i})">
+      <td class="mono" style="padding-left:16px">${g.global}</td><td>${g.obraSocial}</td>
+      <td class="num">$ ${_fmt(totalG)}</td>
+      <td><div class="progw"><span class="progp">${pct}%</span><div class="prog"><i style="width:${pct}%"></i></div></div></td>
+      <td class="mono">${emit}/${tot}</td>
+      <td style="padding-right:16px;text-align:right"><button class="primary" onclick="abrirGlobal(${i})">Ver detalle</button></td></tr>`;
+  }).join('');
+  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Detalle de facturación a emitir</h2>
+    <span class="tag" style="margin-left:2px">Emisor (homologación): ${EMISOR_CUIT}</span>
+    <button style="margin-left:auto" onclick="$('#fileLote').click()">Reimportar</button>
+    <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>
+   <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr>
+     <th style="padding-left:16px">Comprobante global</th><th>Obra social</th><th class="num">Total</th><th>Avance</th><th>Emitidas</th><th style="padding-right:16px"></th>
+   </tr></thead><tbody>${rows}</tbody></table></div>
+   <p class="hint" style="margin-top:10px">Doble clic en una fila también abre el detalle. En homologación las emisiones salen con tu CUIT.</p>`;
+}
+
+function importarLote(input){
+  const file=input.files[0]; if(!file) return;
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      const map={};
+      data.forEach(r=>{
+        const g=String(r.ComprobanteGlobal||'').trim(); if(!g) return;
+        if(!map[g]) map[g]={global:g,obraSocial:r.ObraSocial||'',cuitOS:String(r.CuitObraSocial||''),presentacion:String(r.Presentacion||''),rows:[]};
+        map[g].rows.push({prof:r.Profesional||'',mat:String(r.Matricula||''),resp:r.RespFiscal||'',tipo:String(r.TipoComprobante||'C'),
+          total:(+r.Exento||0)+(+r.Gravado||0)+(+r.IVA||0),estado:'pend',cae:null,pv:null,num:null,err:null});
+      });
+      LOTE=Object.values(map); LOTE_SEL=null;
+      toast('Lote importado: '+LOTE.length+' comprobantes globales'); vEmitir();
+    }catch(err){ toast('No pude leer el Excel: '+err.message,true); }
+  };
+  rd.readAsArrayBuffer(file);
+}
+
+function abrirGlobal(i){ LOTE_SEL=i; vEmitir(); window.scrollTo({top:0,behavior:'smooth'}); }
+function volverLote(){ LOTE_SEL=null; vEmitir(); window.scrollTo({top:0,behavior:'smooth'}); }
+
+function vEmitirDetalle(v){
+  const g=LOTE[LOTE_SEL];
+  const rows=g.rows.map((r,j)=>{
+    const est=r.estado==='ok'?`<span class="tag ok">CAE ${r.cae}</span> <a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`
+      :r.estado==='err'?`<span class="tag no" title="${(r.err||'').replace(/"/g,'')}">rechazada</span>`:`<span class="tag warn">pendiente</span>`;
+    const acc=r.estado==='ok'?'':`<button class="primary" onclick="previewEmision(${j})">Emitir y obtener CAE</button>`;
+    return `<tr><td style="padding-left:16px">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
+      <td class="num">$ ${_fmt(r.total)}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${acc}</td></tr>`;
+  }).join('');
+  const emit=g.rows.filter(r=>r.estado==='ok').length;
+  v.innerHTML=`<div class="row"><button onclick="volverLote()">← Volver</button>
+     <span class="mono" style="margin-left:6px">${g.global}</span> · <strong>${g.obraSocial}</strong>
+     <span class="hint">· presentación ${g.presentacion}</span>
+     <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} emitidas</span></div>
+   <div class="card reveal" style="margin-top:10px"><strong>Receptor:</strong> ${g.obraSocial} · CUIT <span class="mono">${g.cuitOS}</span>
+     <span class="hint"> — se precarga en cada emisión de este comprobante.</span></div>
+   <div class="card" style="margin-top:12px;padding:6px 0"><table><thead><tr>
+     <th style="padding-left:16px">Profesional</th><th>Mat.</th><th>Resp.</th><th class="num">Total</th><th>Estado</th><th style="padding-right:16px"></th>
+   </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function previewEmision(j){
+  const g=LOTE[LOTE_SEL], r=g.rows[j];
+  modal(`<h3>Vista previa de emisión</h3>
+    <div class="f2"><div><label>Emisor (homologación)</label><input class="mono" value="${EMISOR_CUIT}" readonly></div>
+      <div><label>Tipo</label><input value="Factura C" readonly></div></div>
+    <label>Receptor (precargado)</label><input value="${g.obraSocial}" readonly>
+    <div class="f2"><div><label>CUIT receptor</label><input class="mono" value="${g.cuitOS}" readonly></div>
+      <div><label>Total</label><input class="mono" value="$ ${_fmt(r.total)}" readonly></div></div>
+    <p class="hint" style="margin-top:8px">Profesional: ${r.prof} (Mat. ${r.mat}). Comprobante global ${g.global}.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarEmision(${j})">Confirmar y obtener CAE</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+
+async function confirmarEmision(j){
+  const g=LOTE[LOTE_SEL], r=g.rows[j];
+  const docNro=(g.cuitOS||'').replace(/\D/g,'');
+  const body={ cuit:EMISOR_CUIT, puntoVenta:1, tipoComprobante:11, concepto:2,
+    tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0',
+    importeNeto:0, importeIva:0, importeTotal:r.total, alicuotasIva:[],
+    receptor:{ nombre:g.obraSocial, docTipo: docNro?80:99, docNro: docNro||'0', condicionIva:'IVA Responsable Inscripto',
+      global:g.global, presentacion:g.presentacion, profesional:r.prof, matricula:r.mat },
+    items:[{descripcion:'Prestaciones medicas - '+r.prof+' (Mat. '+r.mat+') - global '+g.global, cantidad:1, precioUnitario:r.total, bonif:0, subtotal:r.total}] };
+  closeModal(); toast('Emitiendo…');
+  try{
+    const res=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
+    const c=res.comprobante;
+    if(!c.aprobado) throw new Error((c.observaciones&&c.observaciones[0]&&c.observaciones[0].message)||(c.errores&&c.errores[0]&&c.errores[0].message)||'Rechazado por ARCA');
+    r.estado='ok'; r.cae=c.cae; r.pv=c.puntoVenta; r.num=c.numero;
+    vEmitir(); toast('CAE obtenido: '+c.cae);
+  }catch(e){ r.estado='err'; r.err=e.message; vEmitir(); toast(e.message,true); }
 }
 
 /* ---------- COMPROBANTES ---------- */
