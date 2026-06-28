@@ -49,9 +49,8 @@ async function exportCsv(filters) {
   // [etiqueta visible, clave]
   const cols = [
     ['cuit', 'cuit'],
-    ['punto_venta', 'punto_venta'],
+    ['N° Comprobante', 'nro_comprobante'],
     ['tipo_cbte', 'tipo_cbte'],
-    ['numero', 'numero'],
     ['Comprobante asociado', 'comprobante_asociado'],
     ['cae', 'cae'],
     ['cae_vto', 'cae_vto'],
@@ -66,6 +65,7 @@ async function exportCsv(filters) {
     const global = (r.meta && r.meta.receptor && r.meta.receptor.global) || '';
     const val = (key) => {
       if (key === 'comprobante_asociado') return global;
+      if (key === 'nro_comprobante') return String(r.punto_venta).padStart(5, '0') + '-' + String(r.numero).padStart(8, '0');
       const v = r[key];
       return v instanceof Date ? v.toISOString().slice(0, 10) : v;
     };
