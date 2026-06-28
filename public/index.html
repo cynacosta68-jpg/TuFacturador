@@ -666,6 +666,7 @@ let SOLIC=[];
 function _diasDesde(f){ return Math.floor((Date.now()-new Date(f).getTime())/86400000); }
 function _colorAntig(d){ return d>15?'#c0392b':(d>=5?'#e0a800':'#1e8e3e'); }
 async function vSeguimiento(){
+  if(PERFIL==='pyme') return vSeguimientoPyme();
   const v=$('#view'); v.innerHTML='<p class="hint">Cargando…</p>';
   let data; try{ data=await api('/api/solicitudes?estado=pendiente'); }catch(e){ v.innerHTML='<p class="hint">No se pudo cargar el seguimiento.</p>'; return; }
   SOLIC=data.solicitudes||[];
@@ -746,15 +747,24 @@ async function vEmitirPymeForm(){
   pymeTipos();
 }
 
+const PYME_C_TYPES=['11','12','13','211','212','213'];
 function pymeTipos(){
   const cond=$('#pe_cond').value, sel=$('#pe_tipo');
-  const tipos = cond==='RI' ? [['1','Factura A'],['6','Factura B']] : [['11','Factura C']];
-  sel.innerHTML=tipos.map(t=>`<option value="${t[0]}">${t[1]}</option>`).join('');
+  let html;
+  if(cond==='RI'){
+    html=`<optgroup label="Comprobantes A"><option value="1">Factura A</option><option value="2">Nota de Débito A</option><option value="3">Nota de Crédito A</option></optgroup>`
+       +`<optgroup label="Comprobantes B"><option value="6">Factura B</option><option value="7">Nota de Débito B</option><option value="8">Nota de Crédito B</option></optgroup>`
+       +`<optgroup label="Factura de Crédito Electrónica (FCE MiPyME)"><option value="201">FCE Factura A</option><option value="202">FCE Nota de Débito A</option><option value="203">FCE Nota de Crédito A</option><option value="206">FCE Factura B</option><option value="207">FCE Nota de Débito B</option><option value="208">FCE Nota de Crédito B</option></optgroup>`;
+  } else {
+    html=`<optgroup label="Comprobantes C"><option value="11">Factura C</option><option value="12">Nota de Débito C</option><option value="13">Nota de Crédito C</option></optgroup>`
+       +`<optgroup label="Factura de Crédito Electrónica (FCE MiPyME)"><option value="211">FCE Factura C</option><option value="212">FCE Nota de Débito C</option><option value="213">FCE Nota de Crédito C</option></optgroup>`;
+  }
+  sel.innerHTML=html;
   pymeRecalc();
 }
 
 function pymeRecalc(){
-  const tipo=$('#pe_tipo').value, esC=tipo==='11', cont=$('#pe_importes');
+  const tipo=$('#pe_tipo').value, esC=PYME_C_TYPES.includes(tipo), cont=$('#pe_importes');
   if(esC){
     cont.innerHTML=`<label>Importe total</label><input id="pe_total" class="mono" type="number" step="0.01" placeholder="0.00" oninput="pymeTotalView()"><div id="pe_totview" class="hint" style="margin-top:6px"></div>`;
   } else {
@@ -771,7 +781,7 @@ function pymeRecalc(){
 
 function pymeTotalView(){
   const tipo=$('#pe_tipo').value, tv=$('#pe_totview'); if(!tv) return;
-  if(tipo==='11'){ const t=+(($('#pe_total')||{}).value||0); tv.textContent='Total: $ '+_fmt(t); }
+  if(PYME_C_TYPES.includes(tipo)){ const t=+(($('#pe_total')||{}).value||0); tv.textContent='Total: $ '+_fmt(t); }
   else { const neto=+(($('#pe_neto')||{}).value||0), alic=+(($('#pe_alic')||{}).value||0), iva=Math.round(neto*alic)/100; tv.textContent=`Neto $ ${_fmt(neto)} + IVA $ ${_fmt(iva)} = Total $ ${_fmt(neto+iva)}`; }
 }
 
@@ -780,14 +790,15 @@ async function pymeEmitir(){
   const docTipo=+$('#pe_doctipo').value;
   let docNro=($('#pe_docnro').value||'').replace(/\D/g,''); if(docTipo===99) docNro='0';
   const recnom=$('#pe_recnom').value.trim(), fecha=$('#pe_fecha').value, detalle=($('#pe_detalle').value||'').trim();
+  const esC=PYME_C_TYPES.includes(String(tipo));
   let neto=0, iva=0, total=0, alic=[];
-  if(tipo===11){ total=+($('#pe_total').value||0); neto=total; }
+  if(esC){ total=+($('#pe_total').value||0); neto=total; }
   else { neto=+($('#pe_neto').value||0); const a=+($('#pe_alic').value||0); iva=Math.round(neto*a)/100; total=neto+iva;
     if(iva>0) alic=[{id:(a===21?5:a===10.5?4:a===27?6:3), baseImponible:neto, importe:iva}]; }
   if(total<=0){ toast('Ingresá un importe válido',true); return; }
   const body={ cuit, puntoVenta:1, tipoComprobante:tipo, concepto,
     tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
-    importeNeto: tipo===11?total:neto, importeIva: tipo===11?0:iva, importeTotal:total, alicuotasIva:alic,
+    importeNeto: esC?total:neto, importeIva: esC?0:iva, importeTotal:total, alicuotasIva:alic,
     receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
     fecha:fecha||undefined,
     items:[{descripcion:detalle||'Venta', cantidad:1, precioUnitario:total, bonif:0, subtotal:total}] };
@@ -810,6 +821,53 @@ async function descargarPymePdf(cuit,pv,tipo,num){
     a.href=URL.createObjectURL(blob); a.download='comprobante_'+String(pv).padStart(5,'0')+'-'+String(num).padStart(8,'0')+'.pdf';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   }catch(e){ toast('No se pudo descargar el PDF',true); }
+}
+
+/* ---------- SEGUIMIENTO PyME ---------- */
+async function vSeguimientoPyme(){
+  const v=$('#view'); v.innerHTML='<p class="hint">Cargando…</p>';
+  let data; try{ data=await api('/api/comprobantes'); }catch(e){ v.innerHTML='<p class="hint">No se pudo cargar.</p>'; return; }
+  CBTES=data.comprobantes||[];
+  if(!CBTES.length){ v.innerHTML=`<div class="hero reveal"><h2>Seguimiento de envíos</h2><p>Todavía no emitiste comprobantes en este entorno.</p></div>`; return; }
+  const rows=CBTES.map((c,i)=>{
+    const meta=c.meta||{}, cliente=(meta.receptor&&meta.receptor.nombre)||'—';
+    const num=String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
+    const fch=String(c.fecha||'').slice(0,10);
+    const enviada=!!c.enviado_at;
+    const est=enviada?`<span class="tag" style="background:#1e8e3e;color:#fff">enviada</span>`:`<span class="tag" style="background:#e0a800;color:#fff">pendiente</span>`;
+    const btn=enviada
+      ?`<button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="enviarFacturaPyme(${i})">Reenviar</button>`
+      :`<button class="primary" style="padding:5px 10px;white-space:nowrap" onclick="enviarFacturaPyme(${i})">Enviar factura por mail</button>`;
+    return `<tr><td style="padding-left:16px;white-space:nowrap">${cliente}</td><td class="mono">${c.doc_nro||''}</td><td class="mono">${num}</td><td class="mono">${fch}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${btn}</td></tr>`;
+  }).join('');
+  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Seguimiento de envíos</h2>
+    <span class="tag" style="margin-left:2px">${CBTES.length} comprobantes</span></div>
+   <p class="hint" style="margin-top:6px">Enviá cada factura al cliente por mail (se adjunta el PDF) y queda registrada como <b>enviada</b>.</p>
+   <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr>
+     <th style="padding-left:16px">Cliente</th><th>CUIT / Doc</th><th>N° Comprobante</th><th>Fecha</th><th>Estado</th><th style="padding-right:16px"></th>
+   </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function enviarFacturaPyme(i){
+  const c=CBTES[i], meta=c.meta||{}, cliente=(meta.receptor&&meta.receptor.nombre)||'';
+  const num=String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
+  const cuerpo=`Hola,\n\nTe enviamos adjunta la factura ${num}.\n\nSaludos.`;
+  modal(`<h3>Enviar factura por mail</h3>
+    <label>Cliente</label><input value="${cliente}" readonly>
+    <label>Email del cliente</label><input id="ef_email" value="${c.enviado_to||''}" placeholder="cliente@email.com">
+    <label>Asunto</label><input id="ef_asunto" value="Factura ${num}">
+    <label>Mensaje</label><textarea id="ef_msg" style="min-height:110px">${cuerpo}</textarea>
+    <p class="hint" style="margin-top:8px">Se adjunta el PDF de la factura automáticamente.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarEnvioFactura(${i})">Enviar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function confirmarEnvioFactura(i){
+  const c=CBTES[i], to=$('#ef_email').value.trim(), subject=$('#ef_asunto').value, body=$('#ef_msg').value;
+  if(!to){ toast('Falta el email del cliente',true); return; }
+  closeModal(); toast('Enviando factura…');
+  try{
+    const res=await api(`/api/comprobantes/${c.cuit}/${c.punto_venta}/${c.tipo_cbte}/${c.numero}/enviar`,{method:'POST',body:JSON.stringify({to,subject,body})});
+    if(res.sent){ toast('Factura enviada a '+to); vSeguimiento(); }
+    else { toast(res.reason||'No se pudo enviar (revisá SMTP)',true); }
+  }catch(e){ toast('No se pudo enviar',true); }
 }
 
 /* ---------- COMPROBANTES ---------- */
