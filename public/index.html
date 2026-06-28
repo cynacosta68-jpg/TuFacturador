@@ -350,6 +350,8 @@ async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{met
 let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null;
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
+const _clean=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+function nombrePdf(r){const per=_perMA(r.pHasta||r.pDesde);return _clean(r.prof)+'_'+String(r.pv).padStart(4,'0')+'-'+String(r.num).padStart(8,'0')+(per?'_'+per:'')+'.pdf';}
 
 async function vEmitir(){
   const v=$('#view');
@@ -421,7 +423,7 @@ function vEmitirDetalle(v){
   const per=(g.rows[0]&&g.rows[0].pDesde)?(g.rows[0].pDesde+' a '+g.rows[0].pHasta):'';
   const esPend=r=>!(r.estado==='ok'||r.estado==='recibida'||r.estado==='solicitada');
   const rows=g.rows.map((r,j)=>{
-    const pdfLink=`<a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`;
+    const pdfLink=`<a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" download="${nombrePdf(r)}"><button class="ghost" style="padding:3px 8px">PDF</button></a>`;
     const est=r.estado==='ok'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae}</span>${pdfLink}</span>`
       :r.estado==='recibida'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae} · recibida</span>${r.pdfUrl?`<a href="${r.pdfUrl}" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`:''}</span>`
       :r.estado==='solicitada'?`<span class="tag warn">solicitada</span>`
@@ -429,7 +431,8 @@ function vEmitirDetalle(v){
     const pend=esPend(r);
     const chk=pend?`<input type="checkbox" class="selrow" data-j="${j}" onchange="actualizarSel()">`:'';
     let acc='';
-    if(r.estado==='solicitada') acc=`<button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="cargarRecibida(${j})">Cargar factura</button>`;
+    if(r.estado==='recibida') acc=`<button class="ghost" style="padding:5px 8px" title="Editar / reemplazar" onclick="cargarRecibida(${j})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>`;
+    else if(r.estado==='solicitada') acc=`<button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="cargarRecibida(${j})">Cargar factura</button>`;
     else if(pend) acc=`<button class="primary" style="padding:5px 10px" onclick="previewEmision(${j})">Emitir CAE</button>`;
     return `<tr><td style="padding-left:16px;text-align:center">${chk}</td><td style="white-space:nowrap">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
@@ -519,12 +522,13 @@ async function enviarSolicitud(j){
 }
 function cargarRecibida(j){
   const r=LOTE[LOTE_SEL].rows[j];
-  modal(`<h3>Cargar factura recibida</h3>
-    <p class="hint">Subí el PDF que te envió ${r.prof}. La app intenta leer el CAE y el número del comprobante automáticamente; revisalos y confirmá.</p>
+  const editando=r.estado==='recibida';
+  modal(`<h3>${editando?'Editar factura recibida':'Cargar factura recibida'}</h3>
+    <p class="hint">${editando?'Reemplazá el PDF si subiste uno equivocado y/o corregí los datos.':('Subí el PDF que te envió '+r.prof+'. La app intenta leer el CAE y el número automáticamente; revisalos y confirmá.')}</p>
     <label>PDF de la factura</label><input type="file" id="r_pdf" accept="application/pdf" onchange="procesarPdfRecibido()">
     <div id="r_status" class="hint" style="margin:6px 0 2px"></div>
-    <div class="f2"><div><label>CAE</label><input id="r_cae" class="mono" placeholder="75123456789012"></div>
-      <div><label>Nº comprobante</label><input id="r_num" class="mono" placeholder="0001-00000123"></div></div>
+    <div class="f2"><div><label>CAE</label><input id="r_cae" class="mono" value="${r.cae||''}" placeholder="75123456789012"></div>
+      <div><label>Nº comprobante</label><input id="r_num" class="mono" value="${r.numRec||''}" placeholder="0001-00000123"></div></div>
     <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarRecibida(${j})">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
 
