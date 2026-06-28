@@ -163,6 +163,28 @@ CREATE TABLE IF NOT EXISTS webhooks (
   activo      BOOLEAN NOT NULL DEFAULT true,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS solicitudes (
+  id              BIGSERIAL PRIMARY KEY,
+  entorno         TEXT NOT NULL,
+  cuit_emisor     TEXT NOT NULL,
+  global          TEXT NOT NULL,
+  obra_social     TEXT,
+  cuit_os         TEXT,
+  profesional     TEXT,
+  matricula       TEXT,
+  email           TEXT,
+  total           NUMERIC,
+  periodo_desde   TEXT,
+  periodo_hasta   TEXT,
+  fecha_solicitud TIMESTAMPTZ NOT NULL DEFAULT now(),
+  fecha_reenvio   TIMESTAMPTZ,
+  estado          TEXT NOT NULL DEFAULT 'pendiente',
+  fecha_carga     TIMESTAMPTZ,
+  cae             TEXT,
+  nro_comprobante TEXT,
+  UNIQUE (cuit_emisor, entorno, global, matricula)
+);
 `;
 
 async function migrate() {
