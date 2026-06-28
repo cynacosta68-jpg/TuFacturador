@@ -445,7 +445,7 @@ async function route(req, res, url) {
     // GET /api/comprobantes/export.csv?...
     if (req.method === 'GET' && seg[2] === 'export.csv') {
       if (q.get('cuit')) assertCuitAllowed(principal, q.get('cuit'));
-      const csv = await comprobantes.exportCsv({ cuit: q.get('cuit'), desde: q.get('desde'), hasta: q.get('hasta') });
+      const csv = await comprobantes.exportCsv({ cuit: q.get('cuit'), desde: q.get('desde'), hasta: q.get('hasta'), perfil: q.get('perfil') });
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="comprobantes.csv"' });
       return res.end(csv);
     }
