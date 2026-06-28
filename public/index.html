@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>(function(){try{var t=localStorage.arcanumTheme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <style>
   :root{
@@ -518,11 +520,61 @@ async function enviarSolicitud(j){
 function cargarRecibida(j){
   const r=LOTE[LOTE_SEL].rows[j];
   modal(`<h3>Cargar factura recibida</h3>
-    <p class="hint">Subí el PDF que te envió ${r.prof} y cargá el CAE que figura en el comprobante.</p>
-    <label>PDF de la factura</label><input type="file" id="r_pdf" accept="application/pdf">
+    <p class="hint">Subí el PDF que te envió ${r.prof}. La app intenta leer el CAE y el número del comprobante automáticamente; revisalos y confirmá.</p>
+    <label>PDF de la factura</label><input type="file" id="r_pdf" accept="application/pdf" onchange="procesarPdfRecibido()">
+    <div id="r_status" class="hint" style="margin:6px 0 2px"></div>
     <div class="f2"><div><label>CAE</label><input id="r_cae" class="mono" placeholder="75123456789012"></div>
       <div><label>Nº comprobante</label><input id="r_num" class="mono" placeholder="0001-00000123"></div></div>
     <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarRecibida(${j})">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+
+async function procesarPdfRecibido(){
+  const fpdf=$('#r_pdf').files[0]; if(!fpdf) return;
+  const st=$('#r_status'); st.textContent='Extrayendo datos del PDF…';
+  try{
+    const d=await extraerDatosFactura(fpdf);
+    if(d.cae) $('#r_cae').value=d.cae;
+    if(d.numero) $('#r_num').value=d.numero;
+    st.textContent=d.cae?('Datos extraídos del '+(d.fuente==='QR'?'código QR':'texto')+' ✓ — revisá y confirmá')
+      :'No pude leer el CAE automáticamente — cargalo a mano.';
+  }catch(e){ st.textContent='No pude procesar el PDF — cargá los datos a mano.'; }
+}
+
+async function extraerDatosFactura(file){
+  if(window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc)
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  // 1) QR de ARCA (datos estructurados, incluye CAE y número)
+  try{
+    const viewport=page.getViewport({scale:2.5});
+    const canvas=document.createElement('canvas');
+    canvas.width=viewport.width; canvas.height=viewport.height;
+    const ctx=canvas.getContext('2d');
+    await page.render({canvasContext:ctx,viewport}).promise;
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const qr=jsQR(img.data,img.width,img.height);
+    if(qr&&qr.data){
+      const mp=qr.data.match(/[?&]p=([^&]+)/);
+      if(mp){
+        const b64=decodeURIComponent(mp[1]).replace(/-/g,'+').replace(/_/g,'/');
+        const j=JSON.parse(decodeURIComponent(escape(atob(b64))));
+        const cae=String(j.codAut||'');
+        const num=(j.ptoVta&&j.nroCmp)?(String(j.ptoVta).padStart(4,'0')+'-'+String(j.nroCmp).padStart(8,'0')):'';
+        if(cae) return {cae,numero:num,fuente:'QR'};
+      }
+    }
+  }catch(e){}
+  // 2) Fallback por texto
+  try{
+    const tc=await page.getTextContent();
+    const txt=tc.items.map(i=>i.str).join(' ');
+    const mcae=txt.match(/CAE\s*N?[°ºo:.\s]*?(\d{14})/i)||txt.match(/\b(\d{14})\b/);
+    const mnum=txt.match(/(\d{4,5})\s*-\s*(\d{8})/);
+    return {cae:mcae?mcae[1]:'', numero:mnum?(mnum[1].padStart(4,'0')+'-'+mnum[2]):'', fuente:'texto'};
+  }catch(e){}
+  return {cae:'',numero:'',fuente:null};
 }
 function guardarRecibida(j){
   const r=LOTE[LOTE_SEL].rows[j];
