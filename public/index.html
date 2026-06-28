@@ -417,28 +417,33 @@ function vEmitirDetalle(v){
   const g=LOTE[LOTE_SEL];
   const m=n=>(+n)?_fmt(n):'—';
   const per=(g.rows[0]&&g.rows[0].pDesde)?(g.rows[0].pDesde+' a '+g.rows[0].pHasta):'';
+  const esPend=r=>!(r.estado==='ok'||r.estado==='recibida'||r.estado==='solicitada');
   const rows=g.rows.map((r,j)=>{
     const pdfLink=`<a href="/api/comprobantes/${EMISOR_CUIT}/${r.pv}/11/${r.num}/pdf" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`;
     const est=r.estado==='ok'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae}</span>${pdfLink}</span>`
       :r.estado==='recibida'?`<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span class="tag ok">CAE ${r.cae} · recibida</span>${r.pdfUrl?`<a href="${r.pdfUrl}" target="_blank"><button class="ghost" style="padding:3px 8px">PDF</button></a>`:''}</span>`
       :r.estado==='solicitada'?`<span class="tag warn">solicitada</span>`
       :r.estado==='err'?`<span class="tag no" title="${(r.err||'').replace(/"/g,'')}">rechazada</span>`:`<span class="tag warn">pendiente</span>`;
+    const pend=esPend(r);
+    const chk=pend?`<input type="checkbox" class="selrow" data-j="${j}" onchange="actualizarSel()">`:'';
     let acc='';
-    if(r.estado==='ok'||r.estado==='recibida') acc='';
-    else if(r.estado==='solicitada') acc=`<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`;
-    else acc=`<span style="display:inline-flex;gap:6px;justify-content:flex-end;white-space:nowrap"><button class="primary" style="padding:5px 10px" onclick="previewEmision(${j})">Emitir CAE</button><button style="padding:5px 10px" onclick="solicitarFactura(${j})">Solicitar</button></span>`;
-    return `<tr><td style="padding-left:16px;white-space:nowrap">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
+    if(r.estado==='solicitada') acc=`<button class="ghost" onclick="cargarRecibida(${j})">Cargar factura recibida</button>`;
+    else if(pend) acc=`<button class="primary" style="padding:5px 10px" onclick="previewEmision(${j})">Emitir CAE</button>`;
+    return `<tr><td style="padding-left:16px;text-align:center">${chk}</td><td style="white-space:nowrap">${r.prof}</td><td class="mono">${r.mat}</td><td>${r.resp}</td>
       <td class="num">${m(r.exento)}</td><td class="num">${m(r.gravado)}</td><td class="num">${m(r.iva)}</td>
       <td class="num">$ ${_fmt(r.total)}</td><td>${est}</td><td style="padding-right:16px;text-align:right">${acc}</td></tr>`;
   }).join('');
   const emit=g.rows.filter(r=>r.estado==='ok').length;
+  const pendientes=g.rows.filter(esPend).length;
   v.innerHTML=`<div class="row"><button onclick="volverLote()">← Volver</button>
      <span class="mono" style="margin-left:6px">${g.global}</span> · <strong>${g.obraSocial}</strong>
      <span class="hint">· presentación ${g.presentacion}</span>
      <span class="tag" style="margin-left:auto">${emit}/${g.rows.length} emitidas</span></div>
    <div class="card reveal" style="margin-top:10px"><strong>Receptor:</strong> ${g.obraSocial} · CUIT <span class="mono">${g.cuitOS}</span>${per?` &nbsp;·&nbsp; <strong>Período:</strong> <span class="mono">${per}</span>`:''}<span class="hint"> — se precarga en cada emisión.</span></div>
-   <div class="card" style="margin-top:12px;padding:6px 0;overflow-x:auto"><table><thead><tr>
-     <th style="padding-left:16px">Profesional</th><th>Mat.</th><th>Resp.</th><th class="num">Exento</th><th class="num">Gravado</th><th class="num">IVA</th><th class="num">Total</th><th>Estado</th><th style="padding-right:16px"></th>
+   <div class="row" style="margin-top:10px"><span class="hint">Tildá los profesionales a los que quieras pedirles la factura y enviá las solicitudes en lote.</span>
+     <button id="btnSel" class="primary" style="margin-left:auto" disabled onclick="solicitarSeleccionados()">Solicitar a seleccionados (0)</button></div>
+   <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table><thead><tr>
+     <th style="padding-left:16px;width:34px;text-align:center">${pendientes?`<input type="checkbox" id="selAll" onchange="toggleSelAll(this)">`:''}</th><th style="white-space:nowrap">Profesional</th><th>Mat.</th><th>Resp.</th><th class="num">Exento</th><th class="num">Gravado</th><th class="num">IVA</th><th class="num">Total</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -525,6 +530,49 @@ function guardarRecibida(j){
   if(!cae){ toast('Ingresá el CAE',true); return; }
   r.estado='recibida'; r.cae=cae; r.numRec=num; if(file) r.pdfUrl=URL.createObjectURL(file);
   closeModal(); vEmitir(); toast('Factura recibida cargada');
+}
+
+function actualizarSel(){
+  const n=document.querySelectorAll('.selrow:checked').length;
+  const b=$('#btnSel'); if(b){ b.disabled=!n; b.textContent='Solicitar a seleccionados ('+n+')'; }
+}
+function toggleSelAll(cb){ document.querySelectorAll('.selrow').forEach(c=>c.checked=cb.checked); actualizarSel(); }
+
+function solicitarSeleccionados(){
+  const g=LOTE[LOTE_SEL];
+  const js=[...document.querySelectorAll('.selrow:checked')].map(c=>+c.dataset.j);
+  if(!js.length){ toast('Seleccioná al menos un profesional',true); return; }
+  const per=(g.rows[0]&&g.rows[0].pDesde)?(g.rows[0].pDesde+' a '+g.rows[0].pHasta):'';
+  const filas=js.map(j=>{const r=g.rows[j];return `<div class="row" style="gap:8px"><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.prof}</span><input data-j="${j}" class="bemail" value="${r.email||''}" placeholder="email@profesional.com" style="flex:1"></div>`;}).join('');
+  const tpl=`Hola {profesional},\n\nTe solicito la factura por las prestaciones de ${g.obraSocial} (presentación ${g.presentacion}), período ${per}, por un total de $ {total}.\n\nPor favor emitila a nombre de ${g.obraSocial} (CUIT ${g.cuitOS}) y respondé adjuntando el PDF con su CAE.\n\nGracias.`;
+  modal(`<h3>Solicitar facturas (${js.length})</h3>
+    <label>Mensaje <span class="hint">— se personaliza con {profesional} y {total}</span></label>
+    <textarea id="b_msg" style="min-height:120px">${tpl}</textarea>
+    <label>Emails de los profesionales</label>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto">${filas}</div>
+    <p class="hint" style="margin-top:6px">Se envía un mail individual a cada uno desde el servidor.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="enviarSeleccionados()">Enviar solicitudes</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+
+async function enviarSeleccionados(){
+  const g=LOTE[LOTE_SEL];
+  const tpl=$('#b_msg').value;
+  const items=[...document.querySelectorAll('.bemail')].map(i=>({j:+i.dataset.j,email:i.value.trim()}));
+  const faltan=items.filter(i=>!/.+@.+\..+/.test(i.email));
+  if(faltan.length){ toast('Completá los emails ('+faltan.length+' faltan o son inválidos)',true); return; }
+  closeModal(); toast('Enviando solicitudes…');
+  let ok=0, fail=0;
+  for(const it of items){
+    const r=g.rows[it.j]; r.email=it.email;
+    const msg=tpl.replace(/{profesional}/g,r.prof).replace(/{total}/g,_fmt(r.total));
+    const asunto=`Solicitud de factura - ${g.obraSocial} - periodo ${_perMA((g.rows[0]&&g.rows[0].pHasta)||'')}`;
+    try{ const res=await api('/api/solicitudes/email',{method:'POST',body:JSON.stringify({to:it.email,subject:asunto,body:msg})});
+      if(res.sent){ r.estado='solicitada'; ok++; } else { fail++; } }
+    catch(e){ fail++; }
+  }
+  vEmitir();
+  if(fail) toast(`Enviadas ${ok}, fallaron ${fail}. Revisá el SMTP.`, true);
+  else toast(`${ok} solicitud(es) enviada(s)`);
 }
 
 /* ---------- COMPROBANTES ---------- */
