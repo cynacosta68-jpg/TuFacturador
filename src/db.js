@@ -166,6 +166,19 @@ CREATE TABLE IF NOT EXISTS webhooks (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS representados (
+  id            BIGSERIAL PRIMARY KEY,
+  representante TEXT NOT NULL,
+  cuit          TEXT NOT NULL,
+  razon_social  TEXT,
+  email         TEXT,
+  condicion_iva TEXT,
+  domicilio     TEXT,
+  mipyme        BOOLEAN DEFAULT false,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (representante, cuit)
+);
+
 CREATE TABLE IF NOT EXISTS solicitudes (
   id              BIGSERIAL PRIMARY KEY,
   entorno         TEXT NOT NULL,
