@@ -45,9 +45,11 @@ function csvEscape(v) {
 }
 
 async function exportCsv(filters) {
-  const rows = await list({ ...filters, limit: 5000 });
+  let rows = await list({ ...filters, limit: 5000 });
+  const perfil = filters && filters.perfil;
+  if (perfil) rows = rows.filter((r) => { const p = r.meta && r.meta.perfil; return p ? p === perfil : perfil === 'asociacion'; });
   // [etiqueta visible, clave]
-  const pyme = filters && filters.perfil === 'pyme';
+  const pyme = perfil === 'pyme';
   const cols = pyme ? [
     ['cuit', 'cuit'],
     ['N° Comprobante', 'nro_comprobante'],
