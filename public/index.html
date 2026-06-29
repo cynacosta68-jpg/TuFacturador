@@ -402,6 +402,15 @@ function cambiarEmisorLote(){
   EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
   toast(EMISOR_REP?('Emisor: representado '+EMISOR_CUIT):('Emisor: '+EMISOR_CUIT+' (propio)'));
 }
+function repAfin(r){
+  const cuit=String(r.cuit||'').replace(/\D/g,'');
+  if(cuit){ const m=REPRESENTADOS.find(x=>x.cuit===cuit); if(m) return m; }
+  const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  const pn=norm(r.prof); if(!pn) return null;
+  let m=REPRESENTADOS.find(x=>norm(x.razon_social)===pn); if(m) return m;
+  m=REPRESENTADOS.find(x=>{ const rn=norm(x.razon_social); return rn && (rn.includes(pn)||pn.includes(rn)); });
+  return m||null;
+}
 function cambiarEmisorDet(){
   const o=$('#e_emisor')&&$('#e_emisor').selectedOptions[0]; if(!o) return;
   EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
@@ -566,6 +575,8 @@ function vEmitirDetalle(v){
 
 function previewEmision(j){
   const g=LOTE[LOTE_SEL], r=g.rows[j];
+  const afin=repAfin(r);
+  if(afin){ EMISOR_CUIT=afin.cuit; EMISOR_REP=REPRE_CERT; }
   const hoy=new Date().toISOString().slice(0,10);
   const pd=r.pDesde||hoy, ph=r.pHasta||hoy;
   modal(`<h3>Vista previa de emisión</h3>
@@ -581,7 +592,7 @@ function previewEmision(j){
       <div><label>Período hasta</label><input type="date" id="e_phasta" value="${ph}"></div>
       <div><label>Vto. de pago</label><input type="date" id="e_vto" value="${ph}"></div></div>
     <label>Detalle del concepto</label><textarea id="e_detalle" style="min-height:64px">Prestaciones médicas — ${r.prof} (Mat. ${r.mat})</textarea>
-    <p class="hint" style="margin-top:6px">Concepto: Servicios. Profesional: ${r.prof}. Comprobante global ${g.global}.</p>
+    <p class="hint" style="margin-top:6px">${afin?('Representado detectado: <b>'+(afin.razon_social||afin.cuit)+'</b>. '):(REPRESENTADOS.length?'<b style="color:#c0392b">No se encontró un representado para '+r.prof+'; elegí el emisor arriba.</b> ':'')}Concepto: Servicios. Profesional: ${r.prof}. Comprobante global ${g.global}.</p>
     <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarEmision(${j})">Confirmar y obtener CAE</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
 
