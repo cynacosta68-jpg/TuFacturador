@@ -216,6 +216,34 @@ async function route(req, res, url) {
     }
   }
 
+  // --- Representados (terceros a los que se factura con el certificado propio) ---
+  if (req.method === 'GET' && url.pathname === '/api/representados') {
+    let rows = (await db.query('SELECT * FROM representados ORDER BY razon_social ASC NULLS LAST')).rows;
+    if (scopedRequiresCuit(principal)) rows = rows.filter((r) => principal.cuitAllow.includes(r.representante));
+    return sendJson(res, 200, { ok: true, representados: rows });
+  }
+  if (req.method === 'POST' && url.pathname === '/api/representados') {
+    const b = await readJsonBody(req);
+    const representante = String(b.representante || '').replace(/\D/g, '');
+    const cuit = String(b.cuit || '').replace(/\D/g, '');
+    assertCuitAllowed(principal, representante);
+    if (cuit.length !== 11) return sendJson(res, 400, { ok: false, error: 'CUIT invalido' });
+    await db.query(
+      `INSERT INTO representados (representante, cuit, razon_social, email, condicion_iva, domicilio, mipyme)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (representante, cuit) DO UPDATE SET razon_social=EXCLUDED.razon_social, email=EXCLUDED.email, condicion_iva=EXCLUDED.condicion_iva, domicilio=EXCLUDED.domicilio, mipyme=EXCLUDED.mipyme`,
+      [representante, cuit, b.razonSocial || '', b.email || '', b.condicionIva || '', b.domicilio || '', !!b.mipyme],
+    );
+    return sendJson(res, 200, { ok: true });
+  }
+  if (req.method === 'DELETE' && url.pathname.startsWith('/api/representados/')) {
+    const cuit = url.pathname.split('/').pop().replace(/\D/g, '');
+    const representante = String(url.searchParams.get('representante') || '').replace(/\D/g, '');
+    assertCuitAllowed(principal, representante);
+    await db.query('DELETE FROM representados WHERE representante=$1 AND cuit=$2', [representante, cuit]);
+    return sendJson(res, 200, { ok: true });
+  }
+
   // --- Seguimiento de solicitudes de factura ---
   // POST /api/solicitudes  -> registra/actualiza una solicitud (al pedir la factura)
   if (req.method === 'POST' && url.pathname === '/api/solicitudes') {
@@ -469,8 +497,16 @@ async function route(req, res, url) {
       const cmp = await comprobantes.get(seg[2], seg[3], seg[4], seg[5]);
       if (!cmp) throw notFound();
       const buf = await pdf.generar(cmp);
+      const _slug = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'comprobante';
+      const _mmyyyy = (d) => { const m = String(d || '').match(/^(\d{4})-(\d{2})/); return m ? m[2] + m[1] : ''; };
+      const _meta = cmp.meta || {};
+      const _rec = (_meta.receptor && (_meta.receptor.profesional || _meta.receptor.nombre)) || 'comprobante';
+      const _fechaStr = cmp.fecha instanceof Date ? cmp.fecha.toISOString().slice(0, 10) : String(cmp.fecha || '').slice(0, 10);
+      const _per = _mmyyyy((_meta.periodo && (_meta.periodo.hasta || _meta.periodo.desde)) || _fechaStr);
+      const _nro = String(seg[3]).padStart(5, '0') + '-' + String(seg[5]).padStart(8, '0');
+      const _fname = `${_slug(_rec)}_${_nro}${_per ? '_' + _per : ''}.pdf`;
       try {
-        await mailer.send(to, subject || 'Factura', body || '', [{ filename: `factura-${seg[3]}-${seg[5]}.pdf`, content: buf }]);
+        await mailer.send(to, subject || 'Factura', body || '', [{ filename: _fname, content: buf }]);
         await db.query(
           `UPDATE comprobantes SET enviado_at=now(), enviado_to=$6 WHERE cuit=$1 AND entorno=$2 AND punto_venta=$3 AND tipo_cbte=$4 AND numero=$5`,
           [String(seg[2]).replace(/\D/g, ''), config.env, seg[3], seg[4], seg[5], to],
