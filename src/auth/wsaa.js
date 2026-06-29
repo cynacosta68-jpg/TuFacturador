@@ -74,6 +74,10 @@ async function getAccessTicket(cuit, service, entorno = config.env) {
       if (/ya posee un ta|ta v[aá]lido|v[aá]lido para el acceso|ya posee/i.test(blob)) {
         const cached = await tokenStore.readRaw(c, service, entorno);
         if (cached) return cached;
+        throw new SoapError(
+          'ARCA ya tiene un Ticket de Acceso vigente para este CUIT y el sistema no lo tiene guardado. ' +
+          'Reintentá en unos minutos; si persiste, esperá a que venza el ticket anterior (hasta 12 h desde el último ingreso exitoso a ARCA).',
+          409, { wsaa: true });
       }
       throw e;
     }
