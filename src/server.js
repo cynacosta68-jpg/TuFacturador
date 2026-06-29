@@ -218,7 +218,8 @@ async function route(req, res, url) {
 
   // --- Representados (terceros a los que se factura con el certificado propio) ---
   if (req.method === 'GET' && url.pathname === '/api/representados') {
-    let rows = (await db.query('SELECT * FROM representados ORDER BY razon_social ASC NULLS LAST')).rows;
+    const perfil = url.searchParams.get('perfil') || 'asociacion';
+    let rows = (await db.query('SELECT * FROM representados WHERE perfil = $1 ORDER BY razon_social ASC NULLS LAST', [perfil])).rows;
     if (scopedRequiresCuit(principal)) rows = rows.filter((r) => principal.cuitAllow.includes(r.representante));
     return sendJson(res, 200, { ok: true, representados: rows });
   }
@@ -228,19 +229,21 @@ async function route(req, res, url) {
     const cuit = String(b.cuit || '').replace(/\D/g, '');
     assertCuitAllowed(principal, representante);
     if (cuit.length !== 11) return sendJson(res, 400, { ok: false, error: 'CUIT invalido' });
+    const perfil = (b.perfil === 'pyme') ? 'pyme' : 'asociacion';
     await db.query(
-      `INSERT INTO representados (representante, cuit, razon_social, email, condicion_iva, domicilio, mipyme)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (representante, cuit) DO UPDATE SET razon_social=EXCLUDED.razon_social, email=EXCLUDED.email, condicion_iva=EXCLUDED.condicion_iva, domicilio=EXCLUDED.domicilio, mipyme=EXCLUDED.mipyme`,
-      [representante, cuit, b.razonSocial || '', b.email || '', b.condicionIva || '', b.domicilio || '', !!b.mipyme],
+      `INSERT INTO representados (representante, perfil, cuit, razon_social, email, condicion_iva, domicilio, mipyme)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (representante, perfil, cuit) DO UPDATE SET razon_social=EXCLUDED.razon_social, email=EXCLUDED.email, condicion_iva=EXCLUDED.condicion_iva, domicilio=EXCLUDED.domicilio, mipyme=EXCLUDED.mipyme`,
+      [representante, perfil, cuit, b.razonSocial || '', b.email || '', b.condicionIva || '', b.domicilio || '', !!b.mipyme],
     );
     return sendJson(res, 200, { ok: true });
   }
   if (req.method === 'DELETE' && url.pathname.startsWith('/api/representados/')) {
     const cuit = url.pathname.split('/').pop().replace(/\D/g, '');
     const representante = String(url.searchParams.get('representante') || '').replace(/\D/g, '');
+    const perfil = (url.searchParams.get('perfil') === 'pyme') ? 'pyme' : 'asociacion';
     assertCuitAllowed(principal, representante);
-    await db.query('DELETE FROM representados WHERE representante=$1 AND cuit=$2', [representante, cuit]);
+    await db.query('DELETE FROM representados WHERE representante=$1 AND perfil=$2 AND cuit=$3', [representante, perfil, cuit]);
     return sendJson(res, 200, { ok: true });
   }
 
@@ -254,7 +257,7 @@ async function route(req, res, url) {
       `INSERT INTO solicitudes (entorno, cuit_emisor, global, obra_social, cuit_os, profesional, matricula, email, total, periodo_desde, periodo_hasta, estado)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pendiente')
        ON CONFLICT (cuit_emisor, entorno, global, matricula)
-       DO UPDATE SET email=EXCLUDED.email, obra_social=EXCLUDED.obra_social, cuit_os=EXCLUDED.cuit_os, profesional=EXCLUDED.profesional, total=EXCLUDED.total, periodo_desde=EXCLUDED.periodo_desde, periodo_hasta=EXCLUDED.periodo_hasta, estado='pendiente'`,
+       DO UPDATE SET email=EXCLUDED.email, obra_social=EXCLUDED.obra_social, cuit_os=EXCLUDED.cuit_os, profesional=EXCLUDED.profesional, total=EXCLUDED.total, periodo_desde=EXCLUDED.periodo_desde, periodo_hasta=EXCLUDED.periodo_hasta, estado='pendiente', fecha_reenvio=now()`,
       [config.env, cuit, b.global || '', b.obraSocial || '', b.cuitOS || '', b.profesional || '', b.matricula || '', b.email || '', b.total || 0, b.periodoDesde || '', b.periodoHasta || ''],
     );
     return sendJson(res, 200, { ok: true });
