@@ -414,8 +414,15 @@ async function route(req, res, url) {
       const inv = await readJsonBody(req);
       if (!inv.cuit) throw badRequest('Falta "cuit" (emisor) en el body');
       assertCuitAllowed(principal, inv.cuit);
-      const result = await wsfev1.authorizeInvoice(inv.cuit, inv);
-      return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
+      try {
+        const result = await wsfev1.authorizeInvoice(inv.cuit, inv);
+        return sendJson(res, result.aprobado ? 200 : 422, { ok: result.aprobado, comprobante: result });
+      } catch (e) {
+        const hint = e && e.status === 502
+          ? ' — ARCA devolvió una respuesta inesperada (en homologación suele deberse a que el representado no te tiene delegado el servicio de Facturación Electrónica).'
+          : '';
+        return sendJson(res, 422, { ok: false, error: (e && e.message ? e.message : 'Error emitiendo') + hint });
+      }
     }
   }
 
