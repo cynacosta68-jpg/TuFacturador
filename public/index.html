@@ -361,6 +361,7 @@ async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{met
 
 /* ---------- EMITIR (lotes, dos niveles) ---------- */
 let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null; let EMISOR_REP=null; let LOTE_FILTRO_OS='';
+let IMP_DATA=null, IMP_FILE=null, EMISORES_VALIDOS=[];
 let REPRESENTADOS=[]; let REPRE_CERT='';
 async function cargarRepresentados(){ try{ const r=await api('/api/representados?perfil='+PERFIL); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
@@ -847,7 +848,146 @@ async function vEmitirPymeHome(){
   if(!conCert.length){ v.innerHTML=`<div class="hero reveal"><h2>Cargá un certificado para emitir</h2><p>Necesitás al menos un cliente con certificado vigente.</p><div class="row"><button class="primary" onclick="go('clientes')">Ir a Clientes</button></div></div>`; return; }
   v.innerHTML=`<div class="hero reveal"><h2>Emisión — perfil PyME</h2>
      <p>Emití un comprobante y obtené el CAE al instante, o importá comprobantes en lote.</p>
-     <div class="row"><button class="primary" onclick="vEmitirPymeForm()">Emitir y obtener CAE</button><button onclick="vEmitirLista($('#view'))">Importar nuevo comprobante</button></div></div>`;
+     <div class="row"><button class="primary" onclick="vEmitirPymeForm()">Emitir y obtener CAE</button><button onclick="vImportarPyme()">Importar comprobante</button></div></div>`;
+}
+
+/* ---------- IMPORTAR COMPROBANTE (PyME) ---------- */
+async function vImportarPyme(){
+  const v=$('#view');
+  let conCert=[], reps=[];
+  try{ const t=await api('/api/tenants'); conCert=(t.tenants||[]).filter(x=>x.tieneCertificado); }catch(_){}
+  try{ const rr=await api('/api/representados?perfil='+PERFIL); reps=rr.representados||[]; }catch(_){}
+  EMISORES_VALIDOS=[...new Set([...conCert.map(t=>String(t.cuit)), ...reps.map(r=>String(r.cuit))])];
+  IMP_DATA=null; IMP_FILE=null;
+  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Importar comprobante emitido</h2></div>
+    <p class="hint" style="margin-top:6px">Subí el PDF de un comprobante ya emitido (con su CAE). El sistema lee del comprobante el CUIT del emisor, el tipo, el punto de venta y número, la fecha, el importe total, el CAE y su vencimiento. Revisás los datos y lo registrás.</p>
+    <div class="card" style="margin-top:10px;padding:18px">
+      <div id="impDrop" style="border:2px dashed var(--line);border-radius:12px;text-align:center;padding:30px;cursor:pointer;transition:.15s" onclick="document.getElementById('impFile').click()">
+        <p style="margin:0;font-weight:600;color:var(--ink)">Hacé clic para subir el PDF del comprobante</p>
+        <p class="hint" style="margin:6px 0 0">o arrastralo hasta acá</p>
+      </div>
+      <input type="file" id="impFile" accept=".pdf,application/pdf" style="display:none" onchange="leerComprobantePyme(this.files[0])">
+      <div id="impForm" style="display:none;margin-top:18px"></div>
+    </div>`;
+  const drop=document.getElementById('impDrop');
+  if(drop){
+    drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.borderColor='var(--accent)';});
+    drop.addEventListener('dragleave',e=>{e.preventDefault();drop.style.borderColor='var(--line)';});
+    drop.addEventListener('drop',e=>{e.preventDefault();drop.style.borderColor='var(--line)';const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)leerComprobantePyme(f);});
+  }
+}
+
+async function extraerComprobantePyme(file){
+  if(window.pdfjsLib && !pdfjsLib.GlobalWorkerOptions.workerSrc)
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const page=await pdf.getPage(1);
+  const out={fuente:null};
+  try{
+    const viewport=page.getViewport({scale:2.5});
+    const canvas=document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;
+    const ctx=canvas.getContext('2d');await page.render({canvasContext:ctx,viewport}).promise;
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const qr=jsQR(img.data,img.width,img.height);
+    if(qr&&qr.data){
+      const mp=qr.data.match(/[?&]p=([^&]+)/);
+      if(mp){
+        const b64=decodeURIComponent(mp[1]).replace(/-/g,'+').replace(/_/g,'/');
+        const j=JSON.parse(decodeURIComponent(escape(atob(b64))));
+        out.cuit=String(j.cuit||'').replace(/\D/g,'');
+        out.punto_venta=+j.ptoVta||0;out.numero=+j.nroCmp||0;out.tipo_cbte=+j.tipoCmp||0;
+        out.importe_total=+j.importe||0;out.cae=String(j.codAut||'');
+        out.doc_tipo=+j.tipoDocRec||null;out.doc_nro=j.nroDocRec?String(j.nroDocRec):'';
+        const f=String(j.fecha||'');
+        out.fecha=/^\d{4}-\d{2}-\d{2}/.test(f)?f.slice(0,10):(/^\d{8}$/.test(f)?(f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8)):'');
+        out.fuente='QR';
+      }
+    }
+  }catch(e){}
+  try{
+    const tc=await page.getTextContent();
+    const txt=tc.items.map(i=>i.str).join(' ').replace(/\s+/g,' ');
+    const before=txt.split(/RECEPTOR/i)[0]||txt;
+    const after=txt.split(/RECEPTOR/i)[1]||'';
+    if(!out.cuit){const m=before.match(/CUIT[\s:°ºN]*?(\d{11})/i);if(m)out.cuit=m[1];}
+    const ml=txt.match(/FACTURA\s+([ABC])/i);
+    out.tipoLetra=ml?ml[1].toUpperCase():({1:'A',6:'B',11:'C',201:'A',206:'B',211:'C'}[out.tipo_cbte]||'');
+    if(!out.tipo_cbte&&out.tipoLetra)out.tipo_cbte={A:1,B:6,C:11}[out.tipoLetra];
+    if(!out.punto_venta||!out.numero){const mpv=txt.match(/Punto de Venta[\s:]*?(\d{1,5})\D+N[º°o.]*\s*(\d{1,8})/i);if(mpv){out.punto_venta=out.punto_venta||+mpv[1];out.numero=out.numero||+mpv[2];}}
+    if(!out.fecha){const mf=txt.match(/Fecha de emisi[óo]n[\s:]*?(\d{2})\/(\d{2})\/(\d{4})/i);if(mf)out.fecha=mf[3]+'-'+mf[2]+'-'+mf[1];}
+    if(!out.importe_total){const mi=txt.match(/\$\s*([\d.]+,\d{2})\s*Importe Total/i)||txt.match(/Importe Total[\s:$]*?([\d.]+,\d{2})/i);if(mi)out.importe_total=parseFloat(mi[1].replace(/\./g,'').replace(',','.'));}
+    if(!out.cae){const mc=txt.match(/CAE\s*N?[°ºo:.\s]*?(\d{14})/i);if(mc)out.cae=mc[1];}
+    if(!out.cae_vto){const mv=txt.match(/Vto\.?\s*CAE[\s:]*?(\d{2})\/(\d{2})\/(\d{4})/i);if(mv)out.cae_vto=mv[3]+'-'+mv[2]+'-'+mv[1];}
+    if(!out.doc_nro){const md=after.match(/(DNI|CUIT|CUIL)[\s\S]{0,40}?(\d{7,11})/i);if(md){out.doc_nro=md[2];out.doc_tipo=/DNI/i.test(md[1])?96:(/CUIL/i.test(md[1])?86:80);}}
+    if(out.cuit||out.cae)out.fuente=out.fuente||'texto';
+  }catch(e){}
+  return out;
+}
+
+async function leerComprobantePyme(file){
+  if(!file)return;
+  const form=$('#impForm');form.style.display='block';form.innerHTML='<p class="hint">Leyendo el comprobante…</p>';
+  let d={};try{d=await extraerComprobantePyme(file);}catch(e){d={};}
+  IMP_DATA=d;IMP_FILE=file;
+  const cuitPdf=d.cuit||'';
+  const emisorOk=!!(cuitPdf&&EMISORES_VALIDOS.includes(cuitPdf));
+  let dupCae=false,dupInfo=null;
+  if(d.cae){try{const r=await api('/api/comprobantes/existe-cae?cae='+encodeURIComponent(d.cae));dupCae=!!r.existe;dupInfo=r.comprobante;}catch(_){}}
+  let alerts='';
+  if(!emisorOk)alerts+=`<div style="background:#fdeaea;border:1px solid #e0b4b4;color:#9b2c2c;border-radius:8px;padding:10px 12px;margin-bottom:10px">⚠️ El comprobante <b>no corresponde a un CUIT de emisor habilitado</b>${cuitPdf?(' (CUIT del PDF: '+cuitPdf+')'):' (no se pudo leer el CUIT del emisor)'}. Verificá que sea tu comprobante o el de un representado tuyo.</div>`;
+  if(dupCae)alerts+=`<div style="background:#fdeaea;border:1px solid #e0b4b4;color:#9b2c2c;border-radius:8px;padding:10px 12px;margin-bottom:10px">⚠️ <b>Comprobante ya ingresado:</b> el CAE ${d.cae} ya está registrado${dupInfo?(' — CUIT '+dupInfo.cuit+', PV '+String(dupInfo.punto_venta).padStart(4,'0')+' Nº '+String(dupInfo.numero).padStart(8,'0')):''}.</div>`;
+  if(!d.fuente)alerts+=`<div style="background:#fff7e6;border:1px solid #f0d699;color:#8a6d1b;border-radius:8px;padding:10px 12px;margin-bottom:10px">No pude leer los datos automáticamente. Completá los campos a mano.</div>`;
+  const tipoLetra=d.tipoLetra||({1:'A',6:'B',11:'C'}[d.tipo_cbte]||'C');
+  const opt=(val,lab,sel)=>`<option value="${val}" ${sel?'selected':''}>${lab}</option>`;
+  const bloque=emisorOk&&!dupCae;
+  form.innerHTML=alerts+`
+    <div class="f2">
+      <div><label>CUIT emisor</label><input id="imp_cuit" class="mono" value="${cuitPdf}"></div>
+      <div><label>Tipo</label><select id="imp_tipo">${opt('A','Factura A',tipoLetra==='A')}${opt('B','Factura B',tipoLetra==='B')}${opt('C','Factura C',tipoLetra==='C')}</select></div>
+      <div><label>Punto de venta</label><input id="imp_pv" class="mono" value="${d.punto_venta||''}"></div>
+      <div><label>Número</label><input id="imp_num" class="mono" value="${d.numero||''}"></div>
+      <div><label>Fecha de emisión</label><input id="imp_fecha" type="date" value="${d.fecha||''}"></div>
+      <div><label>Importe total</label><input id="imp_total" class="mono" value="${d.importe_total||''}"></div>
+      <div><label>CAE</label><input id="imp_cae" class="mono" value="${d.cae||''}"></div>
+      <div><label>Vto. CAE</label><input id="imp_vto" type="date" value="${d.cae_vto||''}"></div>
+      <div><label>Tipo doc. receptor</label><select id="imp_doctipo">${opt('96','DNI',d.doc_tipo===96)}${opt('80','CUIT',d.doc_tipo===80)}${opt('86','CUIL',d.doc_tipo===86)}${opt('99','Consumidor final',!d.doc_tipo||d.doc_tipo===99)}</select></div>
+      <div><label>Nº documento receptor</label><input id="imp_docnro" class="mono" value="${d.doc_nro||''}"></div>
+      <div style="grid-column:1/-1"><label>Receptor (razón social / apellido y nombre)</label><input id="imp_recnom" value="${(d.receptorNombre||'').replace(/"/g,'&quot;')}"></div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" ${bloque?'':'disabled'} onclick="registrarComprobantePyme()">Registrar comprobante</button>
+      <button onclick="vImportarPyme()">Subir otro</button>
+      ${d.fuente?('<span class="hint" style="margin-left:auto">Leído por '+(d.fuente==='QR'?'QR de ARCA':'texto del PDF')+'</span>'):''}
+    </div>`;
+}
+
+function _montoImp(v){ v=String(v||'').trim(); if(/,\d{1,2}$/.test(v)) v=v.replace(/\./g,'').replace(',','.'); else v=v.replace(/,/g,''); const n=parseFloat(v); return isNaN(n)?0:n; }
+async function registrarComprobantePyme(){
+  const tipoLetra=$('#imp_tipo').value, tipo_cbte={A:1,B:6,C:11}[tipoLetra]||11;
+  const body={
+    perfil:'pyme',
+    cuit:($('#imp_cuit').value||'').replace(/\D/g,''),
+    tipo_cbte,
+    punto_venta:parseInt(($('#imp_pv').value||'').replace(/\D/g,''))||0,
+    numero:parseInt(($('#imp_num').value||'').replace(/\D/g,''))||0,
+    fecha:$('#imp_fecha').value||null,
+    cae_vto:$('#imp_vto').value||null,
+    importe_total:_montoImp($('#imp_total').value),
+    cae:($('#imp_cae').value||'').replace(/\D/g,''),
+    doc_tipo:parseInt($('#imp_doctipo').value)||null,
+    doc_nro:($('#imp_docnro').value||'').replace(/\D/g,''),
+    receptorNombre:$('#imp_recnom').value||''
+  };
+  if(body.cuit.length!==11){toast('CUIT del emisor inválido',true);return;}
+  if(!body.cae){toast('Falta el CAE',true);return;}
+  if(!body.punto_venta||!body.numero){toast('Faltan punto de venta o número',true);return;}
+  if(!EMISORES_VALIDOS.includes(body.cuit)){toast('El CUIT no corresponde a un emisor habilitado',true);return;}
+  toast('Registrando…');
+  try{
+    const r=await api('/api/comprobantes/importar',{method:'POST',body:JSON.stringify(body)});
+    if(r&&r.ok){ toast('Comprobante registrado'); vImportarPyme(); }
+  }catch(e){ toast((e&&e.message)||'No se pudo registrar',true); }
 }
 
 async function vEmitirPymeForm(){
