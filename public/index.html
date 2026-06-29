@@ -208,7 +208,9 @@ async function vPanel(){
   v.innerHTML=`
    <div class="hero reveal">
      <h2>Bienvenido al portal de Emisiones Masivas en ARCA</h2>
-     <p>Emití comprobantes electrónicos en nombre de cada profesional, en lote, directo a ARCA. El sistema controla los vencimientos y te muestra el estado de los servicios en vivo.</p>
+     <p>${PERFIL==='pyme'
+       ? 'Emití comprobantes electrónicos en nombre de cada cliente conectándote directo a ARCA. El sistema controla los vencimientos, permite enviarle a tus clientes las facturas por mail y te muestra el estado de los servicios en vivo.'
+       : 'Emití comprobantes electrónicos en nombre de cada profesional, en lote, directo a ARCA. El sistema controla los vencimientos y te muestra el estado de los servicios en vivo.'}</p>
      <div class="pill-row">
        <span class="tag"><span class="dot ${m.arca.some(a=>a.ok)?'ok':'bad'}"></span>ARCA · ${ENV}</span>
        <span class="tag">${ME.username} (${ME.role})</span>
