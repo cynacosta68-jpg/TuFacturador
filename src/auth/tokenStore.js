@@ -69,6 +69,11 @@ async function getOrCreate(cuit, service, entorno, fetcher) {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey(cuit, service, entorno)]);
     const again = await read(cuit, service, entorno, client);
     if (again) return again;
+    // Antes de pedir uno nuevo, reusar cualquier TA aun no vencido (aunque este
+    // dentro del margen de renovacion). Evita el re-login que ARCA rechaza con
+    // "el CEE ya posee un TA valido".
+    const raw = await readRaw(cuit, service, entorno);
+    if (raw) return raw;
     const ta = await fetcher();
     await write(cuit, service, entorno, ta, client);
     return ta;
