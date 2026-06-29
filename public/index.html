@@ -946,7 +946,7 @@ async function confirmarEnvioFactura(i){
 
 let ENVSEL=[];
 function mailFacturaBody(cliente,num){
-  return `Hola ${cliente},\nLe adjuntamos la factura N° ${num}.\nGracias por confiar en nuestros servicios.\n¡Saludos!\nEquipo de Administración y Finanzas.`;
+  return `Hola ${cliente},\n\nLe adjuntamos la factura N° ${num}.\n\nGracias por confiar en nuestros servicios.\n\n¡Saludos!\nEquipo de Administración y Finanzas.`;
 }
 function actualizarSelCbte(){
   const n=document.querySelectorAll('.selcbte:checked').length;
