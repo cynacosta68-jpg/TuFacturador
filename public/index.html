@@ -567,7 +567,7 @@ async function confirmarEmision(j){
   const fecha=$('#e_fecha').value, pd=$('#e_pdesde').value, ph=$('#e_phasta').value, vto=$('#e_vto').value;
   const detalle=($('#e_detalle').value||'').trim()||('Prestaciones médicas — '+r.prof);
   const docNro=(g.cuitOS||'').replace(/\D/g,'');
-  const body={ cuit:EMISOR_CUIT, puntoVenta:1, tipoComprobante:11, concepto:2,
+  const body={ cuit:EMISOR_CUIT, perfil:PERFIL, puntoVenta:1, tipoComprobante:11, concepto:2,
     fecha:fecha||undefined,
     fechaServicioDesde:pd||undefined, fechaServicioHasta:ph||undefined, fechaVtoPago:vto||undefined,
     tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0',
@@ -869,7 +869,7 @@ async function pymeEmitir(){
   if(total<=0){ toast('Ingresá un importe válido',true); return; }
   const moneda=$('#pe_moneda').value, cotiz = moneda==='PES'?1:(+(($('#pe_cotiz')||{}).value||0));
   if(moneda!=='PES' && !(cotiz>0)){ toast('Ingresá la cotización del dólar',true); return; }
-  const body={ cuit, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
+  const body={ cuit, perfil:PERFIL, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
     tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
     importeNeto: esC?total:neto, importeIva: esC?0:iva, importeTotal:total, alicuotasIva:alic,
     receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
@@ -899,7 +899,7 @@ async function descargarPymePdf(cuit,pv,tipo,num){
 /* ---------- SEGUIMIENTO PyME ---------- */
 async function vSeguimientoPyme(){
   const v=$('#view'); v.innerHTML='<p class="hint">Cargando…</p>';
-  let data; try{ data=await api('/api/comprobantes'); }catch(e){ v.innerHTML='<p class="hint">No se pudo cargar.</p>'; return; }
+  let data; try{ data=await api('/api/comprobantes?perfil='+PERFIL); }catch(e){ v.innerHTML='<p class="hint">No se pudo cargar.</p>'; return; }
   CBTES=data.comprobantes||[];
   if(!CBTES.length){ v.innerHTML=`<div class="hero reveal"><h2>Seguimiento de envíos</h2><p>Todavía no emitiste comprobantes en este entorno.</p></div>`; return; }
   const rows=CBTES.map((c,i)=>{
@@ -1003,7 +1003,7 @@ async function descargarCbtePdf(i){
   }catch(e){ toast('No se pudo descargar el PDF',true); }
 }
 async function vComprobantes(){
-  const v=$('#view');const {comprobantes}=await api('/api/comprobantes');
+  const v=$('#view');const {comprobantes}=await api('/api/comprobantes?perfil='+PERFIL);
   CBTES=comprobantes;
   const rows=comprobantes.map((c,i)=>`<tr><td class="mono">${c.cuit}</td><td class="mono">${String(c.punto_venta).padStart(5,'0')}-${String(c.numero).padStart(8,'0')}</td><td>${c.tipo_cbte}</td>
     <td class="mono">${(c.fecha||'').slice?.(0,10)||c.fecha||''}</td><td class="mono">${c.cae||''}</td><td class="mono">$${Number(c.importe_total).toFixed(2)}</td>
