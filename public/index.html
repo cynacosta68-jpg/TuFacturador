@@ -365,6 +365,9 @@ let REPRESENTADOS=[]; let REPRE_CERT='';
 async function cargarRepresentados(){ try{ const r=await api('/api/representados'); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
 function emailPorCuit(cuit){ const c=String(cuit||'').replace(/\D/g,''); const r=REPRESENTADOS.find(x=>x.cuit===c); return r?(r.email||''):''; }
+function guardarLote(){ try{ localStorage.setItem('arcanum_lote', JSON.stringify({LOTE, LOTE_SEL, EMISOR_CUIT, EMISOR_REP})); }catch(_){ } }
+function restaurarLote(){ try{ const d=JSON.parse(localStorage.getItem('arcanum_lote')||'null'); if(d&&Array.isArray(d.LOTE)){ LOTE=d.LOTE; LOTE_SEL=(d.LOTE_SEL===undefined?null:d.LOTE_SEL); EMISOR_CUIT=d.EMISOR_CUIT||null; EMISOR_REP=d.EMISOR_REP||null; } }catch(_){ } }
+restaurarLote();
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
 const _clean=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
@@ -394,6 +397,7 @@ async function vEmitir(){
   REPRE_CERT=conCert[0].cuit;
   if(!EMISOR_CUIT) EMISOR_CUIT=conCert[0].cuit;
   await cargarRepresentados();
+  guardarLote();
   if(LOTE_SEL===null) vEmitirLista(v); else vEmitirDetalle(v);
 }
 
@@ -412,8 +416,12 @@ function repAfin(r){
   return m||null;
 }
 function cambiarEmisorDet(){
-  const o=$('#e_emisor')&&$('#e_emisor').selectedOptions[0]; if(!o) return;
-  EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
+  const inp=$('#e_emisor'); if(!inp) return;
+  const v=(inp.value||'').replace(/\D/g,''); const info=$('#e_emisor_info');
+  if(v===REPRE_CERT){ EMISOR_CUIT=REPRE_CERT; EMISOR_REP=null; if(info) info.textContent='Emisor: vos (certificado propio)'; return; }
+  const rep=REPRESENTADOS.find(x=>x.cuit===v);
+  if(rep){ EMISOR_CUIT=rep.cuit; EMISOR_REP=REPRE_CERT; if(info) info.innerHTML='Emisor: <b>'+(rep.razon_social||rep.cuit)+'</b> (representado)'; }
+  else if(info) info.textContent = v.length===11?'Ese CUIT no está en tus representados':'';
 }
 function vEmitirLista(v){
   if(!LOTE.length){
@@ -580,10 +588,10 @@ function previewEmision(j){
   const hoy=new Date().toISOString().slice(0,10);
   const pd=r.pDesde||hoy, ph=r.pHasta||hoy;
   modal(`<h3>Vista previa de emisión</h3>
-    <div class="f2"><div><label>Emisor (a nombre de quién se factura)</label><select id="e_emisor" class="mono" onchange="cambiarEmisorDet()">
-        <option value="${REPRE_CERT}" data-rep="" ${EMISOR_CUIT===REPRE_CERT?'selected':''}>${REPRE_CERT} — mi certificado</option>
-        ${REPRESENTADOS.map(rp=>`<option value="${rp.cuit}" data-rep="${REPRE_CERT}" ${EMISOR_CUIT===rp.cuit?'selected':''}>${rp.cuit} - ${rp.razon_social||''} (representado)</option>`).join('')}
-      </select></div>
+    <div class="f2"><div><label>Emisor (CUIT o nombre del representado)</label>
+        <input id="e_emisor" class="mono" list="emiList" value="${EMISOR_CUIT}" oninput="cambiarEmisorDet()" placeholder="Tu CUIT o buscá por CUIT/nombre">
+        <datalist id="emiList"><option value="${REPRE_CERT}">${REPRE_CERT} — mi certificado</option>${REPRESENTADOS.map(rp=>`<option value="${rp.cuit}">${(rp.razon_social||'')} (${rp.cuit}) (representado)</option>`).join('')}</datalist>
+        <div id="e_emisor_info" class="hint" style="margin-top:4px"></div></div>
       <div><label>Fecha de emisión</label><input type="date" id="e_fecha" value="${hoy}"></div></div>
     <label>Receptor (precargado)</label><input value="${g.obraSocial}" readonly>
     <div class="f2"><div><label>CUIT receptor</label><input class="mono" value="${g.cuitOS}" readonly></div>
@@ -636,17 +644,18 @@ function solicitarFactura(j){
     <div class="row" style="margin-top:14px"><button class="primary" onclick="enviarSolicitud(${j})">Abrir email y marcar solicitada</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
 async function enviarSolicitud(j){
-  const r=LOTE[LOTE_SEL].rows[j];
+  const g=LOTE[LOTE_SEL], r=g.rows[j];
   const email=$('#s_email').value.trim(), asunto=$('#s_asunto').value, msg=$('#s_msg').value;
   if(!email){ toast('Falta el email del profesional',true); return; }
   r.email=email; closeModal();
+  const persistir=async()=>{ try{ await api('/api/solicitudes',{method:'POST',body:JSON.stringify({cuit:EMISOR_CUIT,global:g.global,obraSocial:g.obraSocial,cuitOS:g.cuitOS,profesional:r.prof,matricula:r.mat,email,total:r.total,periodoDesde:r.pDesde,periodoHasta:r.pHasta})}); }catch(_){} };
   const abrirCorreo=()=>{ window.location.href=`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(msg)}`; };
   try{
     const res=await api('/api/solicitudes/email',{method:'POST',body:JSON.stringify({to:email,subject:asunto,body:msg})});
-    r.estado='solicitada'; vEmitir();
+    r.estado='solicitada'; await persistir(); vEmitir();
     if(res.sent){ toast('Solicitud enviada a '+email); }
     else { abrirCorreo(); toast('Servidor sin SMTP: se abrió tu correo'); }
-  }catch(e){ r.estado='solicitada'; vEmitir(); abrirCorreo(); toast('Se abrió tu correo'); }
+  }catch(e){ r.estado='solicitada'; await persistir(); vEmitir(); abrirCorreo(); toast('Se abrió tu correo'); }
 }
 function cargarRecibida(j){
   const r=LOTE[LOTE_SEL].rows[j];
@@ -829,13 +838,13 @@ async function vEmitirPymeForm(){
   const {tenants}=await api('/api/tenants');
   const conCert=tenants.filter(t=>t.tieneCertificado);
   await cargarRepresentados(); REPRE_CERT=(conCert[0]||{}).cuit||'';
-  const certOpts=conCert.map(t=>`<option value="${t.cuit}" data-rep="" data-cond="">${t.cuit}${t.nombre?(' - '+t.nombre):''}</option>`).join('');
-  const repOpts=REPRESENTADOS.map(r=>`<option value="${r.cuit}" data-rep="${REPRE_CERT}" data-cond="${r.condicion_iva||''}">${r.cuit} - ${(r.razon_social||'')} (representado)</option>`).join('');
-  const opts=`${certOpts?('<optgroup label="Con mi certificado (propio)">'+certOpts+'</optgroup>'):''}${repOpts?('<optgroup label="Representados (con mi certificado)">'+repOpts+'</optgroup>'):''}`;
+  const certOpts=conCert.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?(' - '+t.nombre):''} (propio)</option>`).join('');
+  const repOpts=REPRESENTADOS.map(r=>`<option value="${r.cuit}">${(r.razon_social||'')} (${r.cuit}) (representado)</option>`).join('');
+  const opts=certOpts+repOpts;
   const hoy=new Date().toISOString().slice(0,10);
   v.innerHTML=`<div class="row"><button onclick="go('emitir')">← Volver</button><h2 style="margin:0 0 0 6px;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Emitir y obtener CAE</h2></div>
    <div class="card reveal" style="margin-top:12px;max-width:780px">
-     <div class="f2"><div><label>Emisor</label><select id="pe_emisor" onchange="pymeEmisorChange()">${opts}</select></div>
+     <div class="f2"><div><label>Emisor (CUIT o nombre)</label><input id="pe_emisor" class="mono" list="peEmiList" value="${(conCert[0]||{}).cuit||''}" oninput="pymeEmisorChange()" placeholder="Tu CUIT o buscá representado"><datalist id="peEmiList">${opts}</datalist></div>
        <div><label>Condición del emisor</label><select id="pe_cond" onchange="pymeTipos()"><option value="MONO">Monotributo</option><option value="RI">Responsable Inscripto</option><option value="EX">Exento</option></select></div></div>
      <div class="f2"><div><label>Tipo de comprobante</label><select id="pe_tipo" onchange="pymeRecalc()"></select></div>
        <div><label>Concepto</label><select id="pe_concepto" onchange="pymeRecalc()"><option value="1">Productos</option><option value="2">Servicios</option><option value="3">Productos y servicios</option></select></div></div>
@@ -854,9 +863,8 @@ async function vEmitirPymeForm(){
 
 const PYME_C_TYPES=['11','12','13','211','212','213'];
 function pymeEmisorChange(){
-  const sel=$('#pe_emisor'); const o=sel&&sel.selectedOptions[0]; if(!o){ pymeTipos(); return; }
-  const cond=o.getAttribute('data-cond');
-  if(cond){ $('#pe_cond').value = /monotributo/i.test(cond)?'MONO':(/exento/i.test(cond)?'EX':'RI'); }
+  const v=(($('#pe_emisor')&&$('#pe_emisor').value)||'').replace(/\D/g,'');
+  if(v!==REPRE_CERT){ const rep=REPRESENTADOS.find(x=>x.cuit===v); if(rep&&rep.condicion_iva){ $('#pe_cond').value=/monotributo/i.test(rep.condicion_iva)?'MONO':(/exento/i.test(rep.condicion_iva)?'EX':'RI'); } }
   pymeTipos();
 }
 function pymeTipos(){
@@ -901,9 +909,8 @@ function pymeTotalView(){
 }
 
 async function pymeEmitir(){
-  const cuit=$('#pe_emisor').value, tipo=+$('#pe_tipo').value, concepto=+$('#pe_concepto').value;
-  const emiOpt=$('#pe_emisor').selectedOptions[0];
-  const representante=emiOpt?emiOpt.getAttribute('data-rep'):'';
+  const cuit=(($('#pe_emisor').value)||'').replace(/\D/g,''), tipo=+$('#pe_tipo').value, concepto=+$('#pe_concepto').value;
+  const representante=(cuit && cuit!==REPRE_CERT && REPRESENTADOS.some(x=>x.cuit===cuit)) ? REPRE_CERT : '';
   const docTipo=+$('#pe_doctipo').value;
   let docNro=($('#pe_docnro').value||'').replace(/\D/g,''); if(docTipo===99) docNro='0';
   const recnom=$('#pe_recnom').value.trim(), fecha=$('#pe_fecha').value, detalle=($('#pe_detalle').value||'').trim();
