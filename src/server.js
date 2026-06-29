@@ -275,22 +275,33 @@ async function route(req, res, url) {
   // POST /api/solicitudes/cargar  -> marca una solicitud como cargada
   if (req.method === 'POST' && url.pathname === '/api/solicitudes/cargar') {
     const b = await readJsonBody(req);
-    const cuit = String(b.cuit || '').replace(/\D/g, '');
-    assertCuitAllowed(principal, cuit);
-    await db.query(
-      `UPDATE solicitudes SET estado='cargada', fecha_carga=now(), cae=$5, nro_comprobante=$6
-       WHERE cuit_emisor=$1 AND entorno=$2 AND global=$3 AND matricula=$4`,
-      [cuit, config.env, b.global || '', b.matricula || '', b.cae || '', b.nroComprobante || ''],
-    );
-    return sendJson(res, 200, { ok: true });
+    let result;
+    if (b.id) {
+      // Match directo por id de la solicitud (garantizado: lo usa el botón "Marcar cargada").
+      let sql = `UPDATE solicitudes SET estado='cargada', fecha_carga=now(), cae=COALESCE(NULLIF($2,''), cae), nro_comprobante=COALESCE(NULLIF($3,''), nro_comprobante) WHERE id=$1`;
+      const params = [b.id, b.cae || '', b.nroComprobante || ''];
+      if (scopedRequiresCuit(principal)) { params.push(principal.cuitAllow); sql += ` AND cuit_emisor = ANY($4)`; }
+      result = await db.query(sql, params);
+    } else {
+      const cuit = String(b.cuit || '').replace(/\D/g, '');
+      if (cuit) assertCuitAllowed(principal, cuit);
+      // Match tolerante por entorno+global+matricula (sin exigir cuit_emisor; trim y cast a texto
+      // para que un espacio o un número-vs-texto no impidan quitarla de pendientes).
+      result = await db.query(
+        `UPDATE solicitudes SET estado='cargada', fecha_carga=now(), cae=$4, nro_comprobante=$5
+         WHERE entorno=$1 AND btrim(global::text)=btrim($2::text) AND btrim(matricula::text)=btrim($3::text)`,
+        [config.env, String(b.global || ''), String(b.matricula || ''), b.cae || '', b.nroComprobante || ''],
+      );
+    }
+    return sendJson(res, 200, { ok: true, updated: result.rowCount });
   }
   // POST /api/solicitudes/reenviar  -> registra el reenvío (el email lo manda /api/solicitudes/email)
   if (req.method === 'POST' && url.pathname === '/api/solicitudes/reenviar') {
     const b = await readJsonBody(req);
     const cuit = String(b.cuit || '').replace(/\D/g, '');
     assertCuitAllowed(principal, cuit);
-    await db.query(`UPDATE solicitudes SET fecha_reenvio=now() WHERE cuit_emisor=$1 AND entorno=$2 AND global=$3 AND matricula=$4`,
-      [cuit, config.env, b.global || '', b.matricula || '']);
+    await db.query(`UPDATE solicitudes SET fecha_reenvio=now() WHERE entorno=$1 AND global=$2 AND matricula=$3`,
+      [config.env, b.global || '', b.matricula || '']);
     return sendJson(res, 200, { ok: true });
   }
 
