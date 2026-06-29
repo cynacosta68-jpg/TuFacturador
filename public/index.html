@@ -402,6 +402,10 @@ function cambiarEmisorLote(){
   EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
   toast(EMISOR_REP?('Emisor: representado '+EMISOR_CUIT):('Emisor: '+EMISOR_CUIT+' (propio)'));
 }
+function cambiarEmisorDet(){
+  const o=$('#e_emisor')&&$('#e_emisor').selectedOptions[0]; if(!o) return;
+  EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
+}
 function vEmitirLista(v){
   if(!LOTE.length){
     v.innerHTML=`<div class="hero reveal">
@@ -565,7 +569,10 @@ function previewEmision(j){
   const hoy=new Date().toISOString().slice(0,10);
   const pd=r.pDesde||hoy, ph=r.pHasta||hoy;
   modal(`<h3>Vista previa de emisión</h3>
-    <div class="f2"><div><label>Emisor (homologación)</label><input class="mono" value="${EMISOR_CUIT}" readonly></div>
+    <div class="f2"><div><label>Emisor (a nombre de quién se factura)</label><select id="e_emisor" class="mono" onchange="cambiarEmisorDet()">
+        <option value="${REPRE_CERT}" data-rep="" ${EMISOR_CUIT===REPRE_CERT?'selected':''}>${REPRE_CERT} — mi certificado</option>
+        ${REPRESENTADOS.map(rp=>`<option value="${rp.cuit}" data-rep="${REPRE_CERT}" ${EMISOR_CUIT===rp.cuit?'selected':''}>${rp.cuit} - ${rp.razon_social||''} (representado)</option>`).join('')}
+      </select></div>
       <div><label>Fecha de emisión</label><input type="date" id="e_fecha" value="${hoy}"></div></div>
     <label>Receptor (precargado)</label><input value="${g.obraSocial}" readonly>
     <div class="f2"><div><label>CUIT receptor</label><input class="mono" value="${g.cuitOS}" readonly></div>
@@ -600,7 +607,7 @@ async function confirmarEmision(j){
     if(!c.aprobado) throw new Error((c.observaciones&&c.observaciones[0]&&c.observaciones[0].message)||(c.errores&&c.errores[0]&&c.errores[0].message)||'Rechazado por ARCA');
     r.estado='ok'; r.cae=c.cae; r.pv=c.puntoVenta; r.num=c.numero;
     try{ await api('/api/solicitudes/cargar',{method:'POST',body:JSON.stringify({cuit:EMISOR_CUIT,global:g.global,matricula:r.mat,cae:c.cae,nroComprobante:String(c.puntoVenta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0')})}); }catch(_){}
-    vEmitir(); toast('CAE obtenido: '+c.cae);
+    vEmitir(); toast('CAE '+c.cae+' · facturado a CUIT '+c.cuit);
   }catch(e){ r.estado='err'; r.err=e.message; vEmitir(); toast(e.message,true); }
 }
 
@@ -915,7 +922,7 @@ async function pymeEmitir(){
     const perBase = body.periodo ? (body.periodo.hasta||body.periodo.desde) : (fecha||'');
     const per=_MMYYYY(perBase);
     PYME_LAST={cuit:c.cuit,pv:c.puntoVenta,tipo:c.tipoComprobante,num:c.numero,nombre:_clean(recnom||'comprobante')+'_'+num+(per?'_'+per:'')+'.pdf'};
-    $('#pe_result').innerHTML=`<div class="card" style="border:1px solid var(--ok)"><span class="tag ok">APROBADO</span> CAE <span class="mono">${c.cae}</span> · Comprobante <span class="mono">${num}</span> <button class="ghost" style="padding:3px 8px;margin-left:8px" onclick="descargarPymeLast()">PDF</button></div>`;
+    $('#pe_result').innerHTML=`<div class="card" style="border:1px solid var(--ok)"><span class="tag ok">APROBADO</span> CAE <span class="mono">${c.cae}</span> · Emisor <span class="mono">${c.cuit}</span> · Comprobante <span class="mono">${num}</span> <button class="ghost" style="padding:3px 8px;margin-left:8px" onclick="descargarPymeLast()">PDF</button></div>`;
     toast('CAE obtenido: '+c.cae);
   }catch(e){ $('#pe_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span> ${e.message}</div>`; toast(e.message,true); }
 }
@@ -1026,7 +1033,8 @@ async function vRepresentados(){
     <td style="padding-right:16px;text-align:right"><button class="ghost" style="padding:4px 9px" onclick="editarRepresentado(${i})">Editar</button> <button class="ghost" style="padding:4px 9px" onclick="eliminarRepresentado(${i})">Eliminar</button></td>
   </tr>`).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Representados</h2>
-     <button class="primary" style="margin-left:auto" ${REPRE_CERT?'':'disabled'} onclick="editarRepresentado(-1)">Agregar representado</button></div>
+     <div style="margin-left:auto;display:flex;gap:8px"><button class="ghost" ${REPRE_CERT?'':'disabled'} onclick="$('#fileRep').click()">Importar (.xlsx)</button><button class="primary" ${REPRE_CERT?'':'disabled'} onclick="editarRepresentado(-1)">Agregar representado</button></div>
+     <input type="file" id="fileRep" accept=".xlsx" style="display:none" onchange="importarRepresentados(this)"></div>
    <p class="hint" style="margin-top:6px">Personas o empresas a las que les emitís factura con tu certificado (vos sos el representante). ${REPRE_CERT?('Tu certificado: <span class="mono">'+REPRE_CERT+'</span>'):'<b style="color:#c0392b">Cargá primero un certificado en Clientes.</b>'}</p>
    ${REPRESENTADOS.length?`<div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr><th style="padding-left:16px">Razón social</th><th>CUIT</th><th>Condición IVA</th><th>Email</th><th style="padding-right:16px"></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="card" style="margin-top:10px"><p class="hint">Todavía no cargaste representados. Agregá el primero para poder emitir en su nombre.</p></div>'}`;
 }
@@ -1058,6 +1066,33 @@ function eliminarRepresentado(i){
 async function confirmarEliminarRepresentado(cuit){
   try{ await api('/api/representados/'+cuit+'?representante='+REPRE_CERT,{method:'DELETE'}); closeModal(); toast('Eliminado'); vRepresentados(); }
   catch(e){ toast('No se pudo eliminar',true); }
+}
+function importarRepresentados(input){
+  const file=input.files[0]; if(!file) return; input.value='';
+  if(!REPRE_CERT){ toast('Cargá primero un certificado en Clientes',true); return; }
+  const rd=new FileReader();
+  rd.onload=async ev=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      const norm=k=>String(k||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'');
+      const pick=(row,...keys)=>{ for(const k of Object.keys(row)){ if(keys.includes(norm(k))) return row[k]; } return ''; };
+      let ok=0, fail=0;
+      for(const row of data){
+        const cuit=String(pick(row,'cuit')||'').replace(/\D/g,'');
+        if(cuit.length!==11){ fail++; continue; }
+        const body={ representante:REPRE_CERT, cuit,
+          razonSocial:String(pick(row,'razonsocial','razon','nombre')||'').trim(),
+          email:String(pick(row,'email','mail','correo')||'').trim(),
+          condicionIva:String(pick(row,'condicioniva','condicion','iva')||'').trim()||'Responsable Inscripto',
+          domicilio:String(pick(row,'domicilio','direccion')||'').trim(),
+          mipyme:/^(si|true|x|1)$/i.test(String(pick(row,'mipyme','pyme')||'').trim()) };
+        try{ await api('/api/representados',{method:'POST',body:JSON.stringify(body)}); ok++; }catch(_){ fail++; }
+      }
+      toast('Importados: '+ok+(fail?(' · '+fail+' con error/omitidos'):'')); vRepresentados();
+    }catch(e){ toast('No pude leer el Excel: '+e.message,true); }
+  };
+  rd.readAsArrayBuffer(file);
 }
 
 /* ---------- COMPROBANTES ---------- */
