@@ -362,7 +362,7 @@ async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{met
 /* ---------- EMITIR (lotes, dos niveles) ---------- */
 let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null; let EMISOR_REP=null;
 let REPRESENTADOS=[]; let REPRE_CERT='';
-async function cargarRepresentados(){ try{ const r=await api('/api/representados'); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
+async function cargarRepresentados(){ try{ const r=await api('/api/representados?perfil='+PERFIL); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
 function emailPorCuit(cuit){ const c=String(cuit||'').replace(/\D/g,''); const r=REPRESENTADOS.find(x=>x.cuit===c); return r?(r.email||''):''; }
 function guardarLote(){ try{ localStorage.setItem('arcanum_lote', JSON.stringify({LOTE, LOTE_SEL, EMISOR_CUIT, EMISOR_REP})); }catch(_){ } }
@@ -1072,7 +1072,7 @@ async function guardarRepresentado(){
   const cuit=($('#rp_cuit').value||'').replace(/\D/g,'');
   if(cuit.length!==11){ toast('CUIT inválido (11 dígitos)',true); return; }
   if(!REPRE_CERT){ toast('Primero cargá un certificado en Clientes',true); return; }
-  const body={ representante:REPRE_CERT, cuit, razonSocial:$('#rp_rs').value.trim(), email:$('#rp_email').value.trim(), condicionIva:$('#rp_cond').value, domicilio:$('#rp_dom').value.trim(), mipyme:$('#rp_mipyme').checked };
+  const body={ representante:REPRE_CERT, perfil:PERFIL, cuit, razonSocial:$('#rp_rs').value.trim(), email:$('#rp_email').value.trim(), condicionIva:$('#rp_cond').value, domicilio:$('#rp_dom').value.trim(), mipyme:$('#rp_mipyme').checked };
   try{ await api('/api/representados',{method:'POST',body:JSON.stringify(body)}); closeModal(); toast('Representado guardado'); vRepresentados(); }
   catch(e){ toast('No se pudo guardar',true); }
 }
@@ -1082,7 +1082,7 @@ function eliminarRepresentado(i){
     <div class="row" style="margin-top:14px"><button class="primary" style="background:#c0392b;border-color:#c0392b" onclick="confirmarEliminarRepresentado('${r.cuit}')">Eliminar</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
 async function confirmarEliminarRepresentado(cuit){
-  try{ await api('/api/representados/'+cuit+'?representante='+REPRE_CERT,{method:'DELETE'}); closeModal(); toast('Eliminado'); vRepresentados(); }
+  try{ await api('/api/representados/'+cuit+'?representante='+REPRE_CERT+'&perfil='+PERFIL,{method:'DELETE'}); closeModal(); toast('Eliminado'); vRepresentados(); }
   catch(e){ toast('No se pudo eliminar',true); }
 }
 function importarRepresentados(input){
@@ -1099,7 +1099,7 @@ function importarRepresentados(input){
       for(const row of data){
         const cuit=String(pick(row,'cuit')||'').replace(/\D/g,'');
         if(cuit.length!==11){ fail++; continue; }
-        const body={ representante:REPRE_CERT, cuit,
+        const body={ representante:REPRE_CERT, perfil:PERFIL, cuit,
           razonSocial:String(pick(row,'razonsocial','razon','nombre')||'').trim(),
           email:String(pick(row,'email','mail','correo')||'').trim(),
           condicionIva:String(pick(row,'condicioniva','condicion','iva')||'').trim()||'Responsable Inscripto',
