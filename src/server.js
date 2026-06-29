@@ -493,6 +493,41 @@ async function route(req, res, url) {
       if (perfil) rows = rows.filter((r) => { const m = r.meta || {}; const p = m.perfil || ((m.receptor && m.receptor.global) ? 'asociacion' : 'pyme'); return p === perfil; });
       return sendJson(res, 200, { ok: true, comprobantes: rows });
     }
+    // GET /api/comprobantes/existe-cae?cae=  -> ¿ese CAE ya está cargado?
+    if (req.method === 'GET' && seg[2] === 'existe-cae') {
+      const cae = String(q.get('cae') || '').replace(/\D/g, '');
+      if (!cae) return sendJson(res, 200, { ok: true, existe: false });
+      const r = await db.query('SELECT cuit, punto_venta, numero FROM comprobantes WHERE cae=$1 AND entorno=$2 LIMIT 1', [cae, config.env]);
+      return sendJson(res, 200, { ok: true, existe: r.rowCount > 0, comprobante: r.rows[0] || null });
+    }
+    // POST /api/comprobantes/importar  -> registra un comprobante YA emitido (leído de su PDF, con su CAE)
+    if (req.method === 'POST' && seg[2] === 'importar') {
+      const b = await readJsonBody(req);
+      const cuit = String(b.cuit || '').replace(/\D/g, '');
+      assertCuitAllowed(principal, cuit);
+      const cae = String(b.cae || '').replace(/\D/g, '');
+      if (cuit.length !== 11) return sendJson(res, 400, { ok: false, error: 'CUIT del emisor inválido' });
+      if (!cae) return sendJson(res, 400, { ok: false, error: 'Falta el CAE del comprobante' });
+      const dup = await db.query('SELECT 1 FROM comprobantes WHERE cae=$1 AND entorno=$2 LIMIT 1', [cae, config.env]);
+      if (dup.rowCount) return sendJson(res, 409, { ok: false, error: 'Comprobante ya ingresado: ese CAE ya está en la base', duplicado: true });
+      const meta = {
+        perfil: (b.perfil === 'asociacion') ? 'asociacion' : 'pyme',
+        importado: true,
+        receptor: { nombre: b.receptorNombre || '', docTipo: b.doc_tipo || null, docNro: b.doc_nro || '' },
+      };
+      try {
+        const ins = await db.query(
+          `INSERT INTO comprobantes (cuit, entorno, punto_venta, tipo_cbte, numero, cae, cae_vto, resultado, fecha, importe_total, doc_tipo, doc_nro, origen, meta)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'A',$8,$9,$10,$11,'importado',$12)
+           ON CONFLICT (cuit, entorno, punto_venta, tipo_cbte, numero) DO NOTHING`,
+          [cuit, config.env, parseInt(b.punto_venta) || 0, parseInt(b.tipo_cbte) || 11, parseInt(b.numero) || 0, cae, b.cae_vto || null, b.fecha || null, b.importe_total || 0, b.doc_tipo || null, String(b.doc_nro || ''), JSON.stringify(meta)],
+        );
+        if (!ins.rowCount) return sendJson(res, 409, { ok: false, error: 'Ese comprobante (punto de venta y número) ya está registrado para este CUIT', duplicado: true });
+        return sendJson(res, 200, { ok: true });
+      } catch (e) {
+        return sendJson(res, 500, { ok: false, error: 'No se pudo registrar: ' + e.message });
+      }
+    }
     // GET /api/comprobantes/export.csv?...
     if (req.method === 'GET' && seg[2] === 'export.csv') {
       if (q.get('cuit')) assertCuitAllowed(principal, q.get('cuit'));
