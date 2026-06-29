@@ -360,7 +360,7 @@ async function guardarServicio(existing){
 async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{method:'POST'});toast('Restaurado');closeModal();vServicios();}catch(e){toast(e.message,true);}}
 
 /* ---------- EMITIR (lotes, dos niveles) ---------- */
-let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null; let EMISOR_REP=null;
+let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null; let EMISOR_REP=null; let LOTE_FILTRO_OS='';
 let REPRESENTADOS=[]; let REPRE_CERT='';
 async function cargarRepresentados(){ try{ const r=await api('/api/representados?perfil='+PERFIL); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
@@ -401,11 +401,13 @@ async function vEmitir(){
   if(LOTE_SEL===null) vEmitirLista(v); else vEmitirDetalle(v);
 }
 
-function cambiarEmisorLote(){
-  const o=$('#emiLote')&&$('#emiLote').selectedOptions[0]; if(!o) return;
-  EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
-  toast(EMISOR_REP?('Emisor: representado '+EMISOR_CUIT):('Emisor: '+EMISOR_CUIT+' (propio)'));
+function filtrarLoteOS(v){ LOTE_FILTRO_OS=v; if(LOTE_SEL===null) vEmitirLista($('#view')); }
+function vaciarLote(){
+  if(!LOTE.length){ toast('No hay lote cargado'); return; }
+  modal(`<h3>Vaciar lote</h3><p>Vas a quitar <b>${LOTE.length}</b> comprobante(s) global(es) del lote en pantalla. No borra nada en ARCA ni en Seguimiento.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" style="background:#c0392b;border-color:#c0392b" onclick="confirmarVaciarLote()">Vaciar</button><button onclick="closeModal()">Cancelar</button></div>`);
 }
+function confirmarVaciarLote(){ LOTE=[]; LOTE_SEL=null; LOTE_FILTRO_OS=''; guardarLote(); closeModal(); vEmitir(); toast('Lote vaciado'); }
 function repAfin(r){
   const cuit=String(r.cuit||'').replace(/\D/g,'');
   if(cuit){ const m=REPRESENTADOS.find(x=>x.cuit===cuit); if(m) return m; }
@@ -433,6 +435,7 @@ function vEmitirLista(v){
     return;
   }
   const rows=LOTE.map((g,i)=>{
+    if(LOTE_FILTRO_OS && g.obraSocial!==LOTE_FILTRO_OS) return '';
     const emit=g.rows.filter(r=>r.estado==='ok'||r.estado==='recibida').length, tot=g.rows.length, pct=Math.round(100*emit/tot);
     const totalG=g.rows.reduce((a,r)=>a+(+r.total||0),0);
     const per=_perMA(g.rows[0]&&(g.rows[0].pHasta||g.rows[0].pDesde));
@@ -446,12 +449,13 @@ function vEmitirLista(v){
       <td style="padding-right:16px;text-align:right"><button class="primary" onclick="abrirGlobal(${i})">Ver detalle</button></td></tr>`;
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Detalle de facturación a emitir</h2>
-    <select id="emiLote" onchange="cambiarEmisorLote()" style="margin-left:2px;max-width:340px" title="Emisor de este lote">
-      <option value="${REPRE_CERT}" data-rep="" ${EMISOR_CUIT===REPRE_CERT?'selected':''}>Emisor: ${REPRE_CERT} (mi certificado)</option>
-      ${REPRESENTADOS.map(r=>`<option value="${r.cuit}" data-rep="${REPRE_CERT}" ${EMISOR_CUIT===r.cuit?'selected':''}>Emisor: ${r.cuit} - ${r.razon_social||''} (representado)</option>`).join('')}
+    <select onchange="filtrarLoteOS(this.value)" style="margin-left:2px;max-width:300px" title="Filtrar por obra social">
+      <option value="">Todas las obras sociales</option>
+      ${[...new Set(LOTE.map(g=>g.obraSocial).filter(Boolean))].sort().map(o=>`<option value="${String(o).replace(/"/g,'&quot;')}" ${LOTE_FILTRO_OS===o?'selected':''}>${o}</option>`).join('')}
     </select>
     <div style="margin-left:auto;display:flex;gap:8px">
       <button id="btnDelGlob" class="ghost" style="display:none" onclick="eliminarGlobsSeleccionados()">Eliminar selección</button>
+      <button class="ghost" onclick="vaciarLote()">Vaciar lote</button>
       <button onclick="$('#fileLote').click()">Importar lote (.xlsx)</button>
     </div>
     <input type="file" id="fileLote" accept=".xlsx" style="display:none" onchange="importarLote(this)"></div>
