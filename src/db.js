@@ -140,6 +140,7 @@ ALTER TABLE requests ADD COLUMN IF NOT EXISTS ip TEXT;
 ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS meta JSONB;
 ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS enviado_at TIMESTAMPTZ;
 ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS enviado_to TEXT;
+ALTER TABLE comprobantes ADD COLUMN IF NOT EXISTS origen TEXT;
 ALTER TABLE representados ADD COLUMN IF NOT EXISTS perfil TEXT;
 UPDATE representados SET perfil = 'asociacion' WHERE perfil IS NULL;
 ALTER TABLE representados DROP CONSTRAINT IF EXISTS representados_representante_cuit_key;
