@@ -47,7 +47,7 @@ function csvEscape(v) {
 async function exportCsv(filters) {
   let rows = await list({ ...filters, limit: 5000 });
   const perfil = filters && filters.perfil;
-  if (perfil) rows = rows.filter((r) => { const p = r.meta && r.meta.perfil; return p ? p === perfil : perfil === 'asociacion'; });
+  if (perfil) rows = rows.filter((r) => { const m = r.meta || {}; const p = m.perfil || ((m.receptor && m.receptor.global) ? 'asociacion' : 'pyme'); return p === perfil; });
   // [etiqueta visible, clave]
   const pyme = perfil === 'pyme';
   const cols = pyme ? [
