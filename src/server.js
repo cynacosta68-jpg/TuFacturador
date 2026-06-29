@@ -439,7 +439,9 @@ async function route(req, res, url) {
     // GET /api/comprobantes?cuit=&desde=&hasta=
     if (req.method === 'GET' && !seg[2]) {
       if (q.get('cuit')) assertCuitAllowed(principal, q.get('cuit'));
-      const rows = await comprobantes.list({ cuit: q.get('cuit'), desde: q.get('desde'), hasta: q.get('hasta'), limit: q.get('limit') });
+      let rows = await comprobantes.list({ cuit: q.get('cuit'), desde: q.get('desde'), hasta: q.get('hasta'), limit: q.get('limit') });
+      const perfil = q.get('perfil');
+      if (perfil) rows = rows.filter((r) => { const p = r.meta && r.meta.perfil; return p ? p === perfil : perfil === 'asociacion'; });
       return sendJson(res, 200, { ok: true, comprobantes: rows });
     }
     // GET /api/comprobantes/export.csv?...
