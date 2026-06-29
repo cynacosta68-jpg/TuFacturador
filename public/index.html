@@ -365,8 +365,8 @@ let REPRESENTADOS=[]; let REPRE_CERT='';
 async function cargarRepresentados(){ try{ const r=await api('/api/representados?perfil='+PERFIL); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
 function emailPorCuit(cuit){ const c=String(cuit||'').replace(/\D/g,''); const r=REPRESENTADOS.find(x=>x.cuit===c); return r?(r.email||''):''; }
-function guardarLote(){ try{ localStorage.setItem('arcanum_lote', JSON.stringify({LOTE, LOTE_SEL, EMISOR_CUIT, EMISOR_REP})); }catch(_){ } }
-function restaurarLote(){ try{ const d=JSON.parse(localStorage.getItem('arcanum_lote')||'null'); if(d&&Array.isArray(d.LOTE)){ LOTE=d.LOTE; LOTE_SEL=(d.LOTE_SEL===undefined?null:d.LOTE_SEL); EMISOR_CUIT=d.EMISOR_CUIT||null; EMISOR_REP=d.EMISOR_REP||null; } }catch(_){ } }
+function guardarLote(){ /* persistencia desactivada en etapa de prueba: el lote es solo en memoria. Reactivar en producción (idealmente backend por usuario). */ }
+function restaurarLote(){ try{ localStorage.removeItem('arcanum_lote'); }catch(_){ } }
 restaurarLote();
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
@@ -794,7 +794,7 @@ async function vSeguimiento(){
       <td class="mono">${(s.fecha_solicitud||'').slice(0,10)}</td>
       <td class="num" style="color:${c};font-weight:600">${d} día${d===1?'':'s'}</td>
       <td style="white-space:nowrap"><span class="tag" style="background:${c};color:#fff;display:inline-block;white-space:nowrap;vertical-align:middle">${txt}</span></td>
-      <td style="padding-right:16px;text-align:right"><button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="reenviarSolicitud(${i})">Reenviar solicitud</button></td>
+      <td style="padding-right:16px;text-align:right;white-space:nowrap"><button class="ghost" style="padding:5px 10px;white-space:nowrap" onclick="reenviarSolicitud(${i})">Reenviar solicitud</button> <button class="primary" style="padding:5px 10px;white-space:nowrap" onclick="marcarCargada(${i})">Marcar cargada</button></td>
     </tr>`;
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Seguimiento de pendientes</h2>
@@ -803,6 +803,19 @@ async function vSeguimiento(){
    <div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr>
      <th style="padding-left:16px">Profesional</th><th>Mat.</th><th>Obra social</th><th>Comprobante global</th><th>Fecha solicitud</th><th class="num">Antigüedad</th><th>Estado</th><th style="padding-right:16px"></th>
    </tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+async function marcarCargada(i){
+  const s=SOLIC[i];
+  modal(`<h3>Marcar como cargada</h3><p>Vas a quitar a <b>${s.profesional||('Mat. '+s.matricula)}</b> de los pendientes porque la factura ya está cargada.</p>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="confirmarCargada(${i})">Marcar cargada</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function confirmarCargada(i){
+  const s=SOLIC[i]; closeModal(); toast('Marcando…');
+  try{
+    const r=await api('/api/solicitudes/cargar',{method:'POST',body:JSON.stringify({id:s.id})});
+    toast(r&&r.updated?'Quitada de pendientes':'No se encontró la solicitud',r&&!r.updated);
+  }catch(e){ toast('No se pudo marcar',true); }
+  vSeguimiento();
 }
 function reenviarSolicitud(i){
   const s=SOLIC[i];
