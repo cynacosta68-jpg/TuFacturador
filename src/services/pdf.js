@@ -26,6 +26,12 @@ const path = require('path');
 let EMISORES = { default: { razonSocial: '', domicilio: '', condicionIva: '', ingresosBrutos: '', inicioActividades: '' } };
 try { EMISORES = Object.assign(EMISORES, JSON.parse(fs.readFileSync(path.join(__dirname, 'emisores.json'), 'utf8'))); }
 catch (e) { console.error('[arcanum][pdf] no se pudo leer emisores.json:', e.message); }
+// Override por variable de entorno: permite mantener los datos reales FUERA del repo
+// publico. En el deploy se setea ARCANUM_EMISORES con el JSON real (pisa al ejemplo).
+if (process.env.ARCANUM_EMISORES) {
+  try { EMISORES = Object.assign(EMISORES, JSON.parse(process.env.ARCANUM_EMISORES)); }
+  catch (e) { console.error('[arcanum][pdf] ARCANUM_EMISORES invalido:', e.message); }
+}
 function resolverEmisor(cmp) {
   const m = cmp.meta || {};
   return cmp.emisor || m.emisor || EMISORES[norm(cmp.cuit)] || EMISORES.default;
