@@ -57,7 +57,9 @@ async function notify(evento, data) {
 async function send(to, subject, text, attachments) {
   const t = init();
   if (!t) { const e = new Error('SMTP no configurado'); e.code = 'NO_SMTP'; throw e; }
-  await t.sendMail({ from: process.env.ARCANUM_SMTP_FROM || 'arcanum@localhost', to, subject, text, attachments: attachments && attachments.length ? attachments : undefined });
+  const esc = String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.7;color:#222">${esc.replace(/\n/g, '<br>')}</div>`;
+  await t.sendMail({ from: process.env.ARCANUM_SMTP_FROM || 'arcanum@localhost', to, subject, text, html, attachments: attachments && attachments.length ? attachments : undefined });
 }
 
 function canSend() { return !!process.env.ARCANUM_SMTP_HOST; }
