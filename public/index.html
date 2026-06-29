@@ -181,12 +181,12 @@ async function logout(){ await fetch('/api/auth/logout',{method:'POST',credentia
 let PERFIL=(()=>{try{return localStorage.getItem('arcanum_perfil')||'asociacion';}catch(_){return 'asociacion';}})();
 function setPerfil(p){ PERFIL=p; try{localStorage.setItem('arcanum_perfil',p);}catch(_){}
   document.querySelectorAll('.perfilbtn').forEach(b=>b.classList.toggle('active', b.dataset.p===p)); }
-const VIEWS=[['panel','Panel'],['clientes','Clientes'],['servicios','Servicios'],['emitir','Emitir'],['comprobantes','Comprobantes'],['seguimiento','Seguimiento'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
+const VIEWS=[['panel','Panel'],['clientes','Clientes'],['representados','Representados'],['servicios','Servicios'],['emitir','Emitir'],['comprobantes','Comprobantes'],['seguimiento','Seguimiento'],['generador','Generador'],['webhooks','Webhooks'],['usuarios','Usuarios']];
 function renderNav(cur){
   $('#nav').innerHTML=VIEWS.filter(v=>v[0]!=='usuarios'||['superadmin','admin'].includes(ME.role))
     .map(v=>`<button class="${v[0]===cur?'active':''}" onclick="go('${v[0]}')">${v[1]}</button>`).join('');
 }
-function go(v){renderNav(v);location.hash=v;({panel:vPanel,clientes:vClientes,servicios:vServicios,emitir:vEmitir,comprobantes:vComprobantes,seguimiento:vSeguimiento,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
+function go(v){renderNav(v);location.hash=v;({panel:vPanel,clientes:vClientes,representados:vRepresentados,servicios:vServicios,emitir:vEmitir,comprobantes:vComprobantes,seguimiento:vSeguimiento,generador:vGenerador,webhooks:vWebhooks,usuarios:vUsuarios}[v]||vPanel)();}
 
 async function boot(){
   try{ const me=await api('/api/auth/me'); ME=me.usuario; }catch(e){ showLogin(); return; }
@@ -360,7 +360,11 @@ async function guardarServicio(existing){
 async function resetServicio(id){try{await api('/api/services/'+id+'/reset',{method:'POST'});toast('Restaurado');closeModal();vServicios();}catch(e){toast(e.message,true);}}
 
 /* ---------- EMITIR (lotes, dos niveles) ---------- */
-let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null;
+let LOTE=[]; let LOTE_SEL=null; let EMISOR_CUIT=null; let EMISOR_REP=null;
+let REPRESENTADOS=[]; let REPRE_CERT='';
+async function cargarRepresentados(){ try{ const r=await api('/api/representados'); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
+async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
+function emailPorCuit(cuit){ const c=String(cuit||'').replace(/\D/g,''); const r=REPRESENTADOS.find(x=>x.cuit===c); return r?(r.email||''):''; }
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
 const _clean=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
@@ -387,10 +391,17 @@ async function vEmitir(){
   const {tenants}=await api('/api/tenants');
   const conCert=tenants.filter(t=>t.tieneCertificado);
   if(!conCert.length){ v.innerHTML=`<div class="hero reveal"><h2>Cargá un certificado para emitir</h2><p>Necesitás al menos un cliente con certificado vigente.</p><div class="row"><button class="primary" onclick="go('clientes')">Ir a Clientes</button></div></div>`; return; }
-  EMISOR_CUIT=conCert[0].cuit;
+  REPRE_CERT=conCert[0].cuit;
+  if(!EMISOR_CUIT) EMISOR_CUIT=conCert[0].cuit;
+  await cargarRepresentados();
   if(LOTE_SEL===null) vEmitirLista(v); else vEmitirDetalle(v);
 }
 
+function cambiarEmisorLote(){
+  const o=$('#emiLote')&&$('#emiLote').selectedOptions[0]; if(!o) return;
+  EMISOR_CUIT=o.value; EMISOR_REP=o.getAttribute('data-rep')||null;
+  toast(EMISOR_REP?('Emisor: representado '+EMISOR_CUIT):('Emisor: '+EMISOR_CUIT+' (propio)'));
+}
 function vEmitirLista(v){
   if(!LOTE.length){
     v.innerHTML=`<div class="hero reveal">
@@ -414,7 +425,10 @@ function vEmitirLista(v){
       <td style="padding-right:16px;text-align:right"><button class="primary" onclick="abrirGlobal(${i})">Ver detalle</button></td></tr>`;
   }).join('');
   v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Detalle de facturación a emitir</h2>
-    <span class="tag" style="margin-left:2px">Emisor (homologación): ${EMISOR_CUIT}</span>
+    <select id="emiLote" onchange="cambiarEmisorLote()" style="margin-left:2px;max-width:340px" title="Emisor de este lote">
+      <option value="${REPRE_CERT}" data-rep="" ${EMISOR_CUIT===REPRE_CERT?'selected':''}>Emisor: ${REPRE_CERT} (mi certificado)</option>
+      ${REPRESENTADOS.map(r=>`<option value="${r.cuit}" data-rep="${REPRE_CERT}" ${EMISOR_CUIT===r.cuit?'selected':''}>Emisor: ${r.cuit} - ${r.razon_social||''} (representado)</option>`).join('')}
+    </select>
     <div style="margin-left:auto;display:flex;gap:8px">
       <button id="btnDelGlob" class="ghost" style="display:none" onclick="eliminarGlobsSeleccionados()">Eliminar selección</button>
       <button onclick="$('#fileLote').click()">Importar lote (.xlsx)</button>
@@ -569,7 +583,7 @@ async function confirmarEmision(j){
   const fecha=$('#e_fecha').value, pd=$('#e_pdesde').value, ph=$('#e_phasta').value, vto=$('#e_vto').value;
   const detalle=($('#e_detalle').value||'').trim()||('Prestaciones médicas — '+r.prof);
   const docNro=(g.cuitOS||'').replace(/\D/g,'');
-  const body={ cuit:EMISOR_CUIT, perfil:PERFIL, puntoVenta:1, tipoComprobante:11, concepto:2,
+  const body={ cuit:EMISOR_CUIT, perfil:PERFIL, representante: EMISOR_REP||undefined, puntoVenta:1, tipoComprobante:11, concepto:2,
     fecha:fecha||undefined,
     fechaServicioDesde:pd||undefined, fechaServicioHasta:ph||undefined, fechaVtoPago:vto||undefined,
     tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0',
@@ -578,6 +592,7 @@ async function confirmarEmision(j){
       global:g.global, presentacion:g.presentacion, profesional:r.prof, matricula:r.mat },
     periodo:{ desde:pd, hasta:ph, vtoPago:vto },
     items:[{descripcion:detalle, cantidad:1, precioUnitario:r.total, bonif:0, subtotal:r.total}] };
+  if(EMISOR_REP){ const rep=REPRESENTADOS.find(x=>x.cuit===EMISOR_CUIT); if(rep) body.emisor={ razonSocial:rep.razon_social, domicilio:rep.domicilio, condicionIva:rep.condicion_iva, mipyme:rep.mipyme }; }
   closeModal(); toast('Emitiendo…');
   try{
     const res=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
@@ -596,7 +611,7 @@ function solicitarFactura(j){
   const cuerpo=`Hola ${r.prof},\n\nTe solicito la factura por las prestaciones de ${g.obraSocial} (presentacion ${g.presentacion}), periodo ${per}, por un total de $ ${_fmt(r.total)}.\n\nPor favor emitila a nombre de ${g.obraSocial} (CUIT ${g.cuitOS}) y responde este mail adjuntando el PDF con su CAE.\n\nGracias.`;
   modal(`<h3>Solicitar factura</h3>
     <label>Profesional</label><input value="${r.prof}" readonly>
-    <label>Email del profesional</label><input id="s_email" value="${r.email||''}" placeholder="profesional@email.com">
+    <label>Email del profesional</label><input id="s_email" value="${r.email||emailPorCuit(r.cuit)||''}" placeholder="profesional@email.com">
     <label>Asunto</label><input id="s_asunto" value="${asunto.replace(/"/g,'&quot;')}">
     <label>Mensaje</label><textarea id="s_msg" style="min-height:150px">${cuerpo}</textarea>
     <p class="hint" style="margin-top:6px">Se abrirá tu programa de correo con el mensaje listo para enviar.</p>
@@ -696,7 +711,7 @@ function solicitarSeleccionados(){
   const js=[...document.querySelectorAll('.selrow:checked')].map(c=>+c.dataset.j);
   if(!js.length){ toast('Seleccioná al menos un profesional',true); return; }
   const per=(g.rows[0]&&g.rows[0].pDesde)?(g.rows[0].pDesde+' a '+g.rows[0].pHasta):'';
-  const filas=js.map(j=>{const r=g.rows[j];return `<div class="row" style="gap:8px"><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.prof}</span><input data-j="${j}" class="bemail" value="${r.email||''}" placeholder="email@profesional.com" style="flex:1"></div>`;}).join('');
+  const filas=js.map(j=>{const r=g.rows[j];return `<div class="row" style="gap:8px"><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.prof}</span><input data-j="${j}" class="bemail" value="${r.email||emailPorCuit(r.cuit)||''}" placeholder="email@profesional.com" style="flex:1"></div>`;}).join('');
   const tpl=`Hola {profesional},\n\nTe solicito la factura por las prestaciones de ${g.obraSocial} (presentación ${g.presentacion}), período ${per}, por un total de $ {total}.\n\nPor favor emitila a nombre de ${g.obraSocial} (CUIT ${g.cuitOS}) y respondé adjuntando el PDF con su CAE.\n\nGracias.`;
   modal(`<h3>Solicitar facturas (${js.length})</h3>
     <label>Mensaje <span class="hint">— se personaliza con {profesional} y {total}</span></label>
@@ -795,11 +810,14 @@ async function vEmitirPymeForm(){
   const v=$('#view');
   const {tenants}=await api('/api/tenants');
   const conCert=tenants.filter(t=>t.tieneCertificado);
-  const opts=conCert.map(t=>`<option value="${t.cuit}">${t.cuit}${t.nombre?(' - '+t.nombre):''}</option>`).join('');
+  await cargarRepresentados(); REPRE_CERT=(conCert[0]||{}).cuit||'';
+  const certOpts=conCert.map(t=>`<option value="${t.cuit}" data-rep="" data-cond="">${t.cuit}${t.nombre?(' - '+t.nombre):''}</option>`).join('');
+  const repOpts=REPRESENTADOS.map(r=>`<option value="${r.cuit}" data-rep="${REPRE_CERT}" data-cond="${r.condicion_iva||''}">${r.cuit} - ${(r.razon_social||'')} (representado)</option>`).join('');
+  const opts=`${certOpts?('<optgroup label="Con mi certificado (propio)">'+certOpts+'</optgroup>'):''}${repOpts?('<optgroup label="Representados (con mi certificado)">'+repOpts+'</optgroup>'):''}`;
   const hoy=new Date().toISOString().slice(0,10);
   v.innerHTML=`<div class="row"><button onclick="go('emitir')">← Volver</button><h2 style="margin:0 0 0 6px;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Emitir y obtener CAE</h2></div>
    <div class="card reveal" style="margin-top:12px;max-width:780px">
-     <div class="f2"><div><label>Emisor</label><select id="pe_emisor">${opts}</select></div>
+     <div class="f2"><div><label>Emisor</label><select id="pe_emisor" onchange="pymeEmisorChange()">${opts}</select></div>
        <div><label>Condición del emisor</label><select id="pe_cond" onchange="pymeTipos()"><option value="MONO">Monotributo</option><option value="RI">Responsable Inscripto</option><option value="EX">Exento</option></select></div></div>
      <div class="f2"><div><label>Tipo de comprobante</label><select id="pe_tipo" onchange="pymeRecalc()"></select></div>
        <div><label>Concepto</label><select id="pe_concepto" onchange="pymeRecalc()"><option value="1">Productos</option><option value="2">Servicios</option><option value="3">Productos y servicios</option></select></div></div>
@@ -813,10 +831,16 @@ async function vEmitirPymeForm(){
      <div id="pe_result" style="margin-top:10px"></div>
      <div class="row" style="margin-top:14px"><button class="primary" onclick="pymeEmitir()">Emitir y obtener CAE</button></div>
    </div>`;
-  pymeTipos(); pymeMonedaView();
+  pymeEmisorChange(); pymeMonedaView();
 }
 
 const PYME_C_TYPES=['11','12','13','211','212','213'];
+function pymeEmisorChange(){
+  const sel=$('#pe_emisor'); const o=sel&&sel.selectedOptions[0]; if(!o){ pymeTipos(); return; }
+  const cond=o.getAttribute('data-cond');
+  if(cond){ $('#pe_cond').value = /monotributo/i.test(cond)?'MONO':(/exento/i.test(cond)?'EX':'RI'); }
+  pymeTipos();
+}
 function pymeTipos(){
   const cond=$('#pe_cond').value, sel=$('#pe_tipo');
   let html;
@@ -860,6 +884,8 @@ function pymeTotalView(){
 
 async function pymeEmitir(){
   const cuit=$('#pe_emisor').value, tipo=+$('#pe_tipo').value, concepto=+$('#pe_concepto').value;
+  const emiOpt=$('#pe_emisor').selectedOptions[0];
+  const representante=emiOpt?emiOpt.getAttribute('data-rep'):'';
   const docTipo=+$('#pe_doctipo').value;
   let docNro=($('#pe_docnro').value||'').replace(/\D/g,''); if(docTipo===99) docNro='0';
   const recnom=$('#pe_recnom').value.trim(), fecha=$('#pe_fecha').value, detalle=($('#pe_detalle').value||'').trim();
@@ -871,7 +897,7 @@ async function pymeEmitir(){
   if(total<=0){ toast('Ingresá un importe válido',true); return; }
   const moneda=$('#pe_moneda').value, cotiz = moneda==='PES'?1:(+(($('#pe_cotiz')||{}).value||0));
   if(moneda!=='PES' && !(cotiz>0)){ toast('Ingresá la cotización del dólar',true); return; }
-  const body={ cuit, perfil:PERFIL, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
+  const body={ cuit, perfil:PERFIL, representante: representante||undefined, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
     tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
     importeNeto: esC?total:neto, importeIva: esC?0:iva, importeTotal:total, alicuotasIva:alic,
     receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
@@ -879,21 +905,27 @@ async function pymeEmitir(){
     items:[{descripcion:detalle||'Venta', cantidad:1, precioUnitario:total, bonif:0, subtotal:total}] };
   if(concepto===2||concepto===3){ const pd=($('#pe_pd')||{}).value, ph=($('#pe_ph')||{}).value, vto=($('#pe_vto')||{}).value;
     body.fechaServicioDesde=pd; body.fechaServicioHasta=ph; body.fechaVtoPago=vto; body.periodo={desde:pd,hasta:ph,vtoPago:vto}; }
+  if(representante){ const rep=REPRESENTADOS.find(x=>x.cuit===cuit); if(rep) body.emisor={ razonSocial:rep.razon_social, domicilio:rep.domicilio, condicionIva:rep.condicion_iva, mipyme:rep.mipyme }; }
   $('#pe_result').innerHTML='<p class="hint">Emitiendo…</p>';
   try{
     const res=await api('/api/wsfev1/comprobantes',{method:'POST',body:JSON.stringify(body)});
     const c=res.comprobante;
     if(!c.aprobado) throw new Error((c.observaciones&&c.observaciones[0]&&c.observaciones[0].message)||(c.errores&&c.errores[0]&&c.errores[0].message)||'Rechazado por ARCA');
     const num=String(c.puntoVenta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0');
-    $('#pe_result').innerHTML=`<div class="card" style="border:1px solid var(--ok)"><span class="tag ok">APROBADO</span> CAE <span class="mono">${c.cae}</span> · Comprobante <span class="mono">${num}</span> <button class="ghost" style="padding:3px 8px;margin-left:8px" onclick="descargarPymePdf('${c.cuit}',${c.puntoVenta},${c.tipoComprobante},${c.numero})">PDF</button></div>`;
+    const perBase = body.periodo ? (body.periodo.hasta||body.periodo.desde) : (fecha||'');
+    const per=_MMYYYY(perBase);
+    PYME_LAST={cuit:c.cuit,pv:c.puntoVenta,tipo:c.tipoComprobante,num:c.numero,nombre:_clean(recnom||'comprobante')+'_'+num+(per?'_'+per:'')+'.pdf'};
+    $('#pe_result').innerHTML=`<div class="card" style="border:1px solid var(--ok)"><span class="tag ok">APROBADO</span> CAE <span class="mono">${c.cae}</span> · Comprobante <span class="mono">${num}</span> <button class="ghost" style="padding:3px 8px;margin-left:8px" onclick="descargarPymeLast()">PDF</button></div>`;
     toast('CAE obtenido: '+c.cae);
   }catch(e){ $('#pe_result').innerHTML=`<div class="card"><span class="tag no">RECHAZADO</span> ${e.message}</div>`; toast(e.message,true); }
 }
 
-async function descargarPymePdf(cuit,pv,tipo,num){
-  try{ const resp=await fetch(`/api/comprobantes/${cuit}/${pv}/${tipo}/${num}/pdf`,{credentials:'include'}); if(!resp.ok) throw 0;
+let PYME_LAST=null;
+async function descargarPymeLast(){
+  if(!PYME_LAST) return; const p=PYME_LAST;
+  try{ const resp=await fetch(`/api/comprobantes/${p.cuit}/${p.pv}/${p.tipo}/${p.num}/pdf`,{credentials:'include'}); if(!resp.ok) throw 0;
     const blob=await resp.blob(), a=document.createElement('a');
-    a.href=URL.createObjectURL(blob); a.download='comprobante_'+String(pv).padStart(5,'0')+'-'+String(num).padStart(8,'0')+'.pdf';
+    a.href=URL.createObjectURL(blob); a.download=p.nombre;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
   }catch(e){ toast('No se pudo descargar el PDF',true); }
 }
@@ -984,12 +1016,56 @@ async function confirmarEnvioSeleccion(){
   toast('Enviadas: '+ok+(fail?(' · fallaron '+fail):'')); vSeguimiento();
 }
 
+/* ---------- REPRESENTADOS ---------- */
+async function vRepresentados(){
+  const v=$('#view'); v.innerHTML='<p class="hint">Cargando…</p>';
+  await cargarRepresentados(); await certHolderCuit();
+  const rows=REPRESENTADOS.map((r,i)=>`<tr>
+    <td style="padding-left:16px;white-space:nowrap">${r.razon_social||'—'}</td>
+    <td class="mono">${r.cuit}</td><td>${r.condicion_iva||'—'}</td><td>${r.email||'—'}</td>
+    <td style="padding-right:16px;text-align:right"><button class="ghost" style="padding:4px 9px" onclick="editarRepresentado(${i})">Editar</button> <button class="ghost" style="padding:4px 9px" onclick="eliminarRepresentado(${i})">Eliminar</button></td>
+  </tr>`).join('');
+  v.innerHTML=`<div class="row"><h2 style="margin:0;text-transform:none;font-size:18px;letter-spacing:-.2px;color:var(--ink)">Representados</h2>
+     <button class="primary" style="margin-left:auto" ${REPRE_CERT?'':'disabled'} onclick="editarRepresentado(-1)">Agregar representado</button></div>
+   <p class="hint" style="margin-top:6px">Personas o empresas a las que les emitís factura con tu certificado (vos sos el representante). ${REPRE_CERT?('Tu certificado: <span class="mono">'+REPRE_CERT+'</span>'):'<b style="color:#c0392b">Cargá primero un certificado en Clientes.</b>'}</p>
+   ${REPRESENTADOS.length?`<div class="card" style="margin-top:10px;padding:6px 0;overflow-x:auto"><table class="segtbl"><thead><tr><th style="padding-left:16px">Razón social</th><th>CUIT</th><th>Condición IVA</th><th>Email</th><th style="padding-right:16px"></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="card" style="margin-top:10px"><p class="hint">Todavía no cargaste representados. Agregá el primero para poder emitir en su nombre.</p></div>'}`;
+}
+function editarRepresentado(i){
+  const r = i>=0 ? REPRESENTADOS[i] : {cuit:'',razon_social:'',email:'',condicion_iva:'Responsable Inscripto',domicilio:'',mipyme:false};
+  const sel=(x)=>r.condicion_iva===x?'selected':'';
+  modal(`<h3>${i>=0?'Editar':'Nuevo'} representado</h3>
+    <div class="f2"><div><label>CUIT</label><input id="rp_cuit" class="mono" value="${r.cuit||''}" ${i>=0?'readonly':''} placeholder="30123456789"></div>
+      <div><label>Condición IVA</label><select id="rp_cond"><option ${sel('Responsable Inscripto')}>Responsable Inscripto</option><option ${sel('Responsable Monotributo')}>Responsable Monotributo</option><option ${sel('Exento')}>Exento</option></select></div></div>
+    <label>Razón social / Nombre</label><input id="rp_rs" value="${(r.razon_social||'').replace(/"/g,'&quot;')}" placeholder="Razón social">
+    <label>Email</label><input id="rp_email" value="${(r.email||'').replace(/"/g,'&quot;')}" placeholder="cliente@email.com">
+    <label>Domicilio</label><input id="rp_dom" value="${(r.domicilio||'').replace(/"/g,'&quot;')}" placeholder="Calle 123 - Ciudad">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" id="rp_mipyme" ${r.mipyme?'checked':''} style="width:auto"> Es MiPyME (habilita FCE)</label>
+    <div class="row" style="margin-top:14px"><button class="primary" onclick="guardarRepresentado()">Guardar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function guardarRepresentado(){
+  const cuit=($('#rp_cuit').value||'').replace(/\D/g,'');
+  if(cuit.length!==11){ toast('CUIT inválido (11 dígitos)',true); return; }
+  if(!REPRE_CERT){ toast('Primero cargá un certificado en Clientes',true); return; }
+  const body={ representante:REPRE_CERT, cuit, razonSocial:$('#rp_rs').value.trim(), email:$('#rp_email').value.trim(), condicionIva:$('#rp_cond').value, domicilio:$('#rp_dom').value.trim(), mipyme:$('#rp_mipyme').checked };
+  try{ await api('/api/representados',{method:'POST',body:JSON.stringify(body)}); closeModal(); toast('Representado guardado'); vRepresentados(); }
+  catch(e){ toast('No se pudo guardar',true); }
+}
+function eliminarRepresentado(i){
+  const r=REPRESENTADOS[i];
+  modal(`<h3>Eliminar representado</h3><p>¿Eliminar a <b>${r.razon_social||r.cuit}</b>?</p>
+    <div class="row" style="margin-top:14px"><button class="primary" style="background:#c0392b;border-color:#c0392b" onclick="confirmarEliminarRepresentado('${r.cuit}')">Eliminar</button><button onclick="closeModal()">Cancelar</button></div>`);
+}
+async function confirmarEliminarRepresentado(cuit){
+  try{ await api('/api/representados/'+cuit+'?representante='+REPRE_CERT,{method:'DELETE'}); closeModal(); toast('Eliminado'); vRepresentados(); }
+  catch(e){ toast('No se pudo eliminar',true); }
+}
+
 /* ---------- COMPROBANTES ---------- */
 let CBTES=[];
 function nombrePdfCbte(c){
   const meta=c.meta||{};
-  const prof=(meta.receptor&&meta.receptor.profesional)||(meta.emisor&&meta.emisor.nombre)||c.cuit;
-  const per=meta.periodo?_MMYYYY(meta.periodo.hasta||meta.periodo.desde):'';
+  const prof=(meta.receptor&&(meta.receptor.profesional||meta.receptor.nombre))||(meta.emisor&&meta.emisor.nombre)||c.cuit;
+  const per=(meta.periodo?_MMYYYY(meta.periodo.hasta||meta.periodo.desde):'')||_MMYYYY(typeof c.fecha==='string'?c.fecha.slice(0,10):'');
   return _clean(prof)+'_'+String(c.punto_venta).padStart(5,'0')+'-'+String(c.numero).padStart(8,'0')+(per?'_'+per:'')+'.pdf';
 }
 async function descargarCbtePdf(i){
