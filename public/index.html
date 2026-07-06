@@ -617,7 +617,7 @@ async function confirmarEmision(j){
   const body={ cuit:EMISOR_CUIT, perfil:PERFIL, representante: EMISOR_REP||undefined, puntoVenta:1, tipoComprobante:11, concepto:2,
     fecha:fecha||undefined,
     fechaServicioDesde:pd||undefined, fechaServicioHasta:ph||undefined, fechaVtoPago:vto||undefined,
-    tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0',
+    tipoDocReceptor: docNro?80:99, nroDocReceptor: docNro||'0', condicionIvaReceptor:1,
     importeNeto:r.total, importeIva:0, importeTotal:r.total, alicuotasIva:[],
     receptor:{ nombre:g.obraSocial, docTipo: docNro?80:99, docNro: docNro||'0', condicionIva:'IVA Responsable Inscripto',
       global:g.global, presentacion:g.presentacion, profesional:r.prof, matricula:r.mat },
@@ -1008,6 +1008,7 @@ async function vEmitirPymeForm(){
      <div class="f2"><div><label>Receptor — tipo de documento</label><select id="pe_doctipo" onchange="pymeRecalc()"><option value="80">CUIT</option><option value="86">CUIL</option><option value="96">DNI</option><option value="99">Consumidor final</option></select></div>
        <div><label>Nº de documento</label><input id="pe_docnro" class="mono" placeholder="30123456789"></div></div>
      <label>Razón social / Nombre del receptor</label><input id="pe_recnom" placeholder="Razón social">
+     <label>Condición IVA del receptor</label><select id="pe_condiva"><option value="1" selected>IVA Responsable Inscripto</option><option value="6">Responsable Monotributo</option><option value="4">IVA Sujeto Exento</option><option value="5">Consumidor Final</option><option value="13">Monotributista Social</option><option value="7">Sujeto No Categorizado</option><option value="15">IVA No Alcanzado</option></select>
      <div class="f2"><div><label>Moneda</label><select id="pe_moneda" onchange="pymeMonedaView()"><option value="PES">Pesos (ARS)</option><option value="DOL">Dólares (USD)</option></select></div><div id="pe_cotiz_wrap"></div></div>
      <div id="pe_importes"></div>
      <div class="f2"><div><label>Fecha de emisión</label><input type="date" id="pe_fecha" value="${hoy}"></div><div id="pe_periodo_wrap"></div></div>
@@ -1080,7 +1081,7 @@ async function pymeEmitir(){
   const moneda=$('#pe_moneda').value, cotiz = moneda==='PES'?1:(+(($('#pe_cotiz')||{}).value||0));
   if(moneda!=='PES' && !(cotiz>0)){ toast('Ingresá la cotización del dólar',true); return; }
   const body={ cuit, perfil:PERFIL, representante: representante||undefined, puntoVenta:1, tipoComprobante:tipo, concepto, moneda, cotizacion:cotiz,
-    tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0',
+    tipoDocReceptor:docTipo, nroDocReceptor:docNro||'0', condicionIvaReceptor:(+(($('#pe_condiva')||{}).value)||1),
     importeNeto: esC?total:neto, importeIva: esC?0:iva, importeTotal:total, alicuotasIva:alic,
     receptor:{ nombre:recnom||'Consumidor final', docTipo, docNro:docNro||'0' },
     fecha:fecha||undefined,
