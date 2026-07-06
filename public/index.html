@@ -366,8 +366,8 @@ let REPRESENTADOS=[]; let REPRE_CERT='';
 async function cargarRepresentados(){ try{ const r=await api('/api/representados?perfil='+PERFIL); REPRESENTADOS=r.representados||[]; }catch(_){ REPRESENTADOS=[]; } return REPRESENTADOS; }
 async function certHolderCuit(){ try{ const {tenants}=await api('/api/tenants'); REPRE_CERT=(tenants.find(t=>t.tieneCertificado)||{}).cuit||''; }catch(_){ REPRE_CERT=''; } return REPRE_CERT; }
 function emailPorCuit(cuit){ const c=String(cuit||'').replace(/\D/g,''); const r=REPRESENTADOS.find(x=>x.cuit===c); return r?(r.email||''):''; }
-function guardarLote(){ /* persistencia desactivada en etapa de prueba: el lote es solo en memoria. Reactivar en producción (idealmente backend por usuario). */ }
-function restaurarLote(){ try{ localStorage.removeItem('arcanum_lote'); }catch(_){ } }
+function guardarLote(){ try{ localStorage.setItem('arcanum_lote', JSON.stringify(LOTE)); }catch(_){ } }
+function restaurarLote(){ try{ var s=localStorage.getItem('arcanum_lote'); if(s){ var a=JSON.parse(s); if(Array.isArray(a)) LOTE=a; } }catch(_){ } }
 restaurarLote();
 const _fmt=n=>(+n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const _perMA=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})/);return m?m[2]+'-'+m[1]:'';};
